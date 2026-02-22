@@ -1,4 +1,4 @@
-import { SystemStats, OBDPidInfo, OBDValue, ThemeInfo, ThemeData } from './index';
+import { SystemStats, OBDPidInfo, OBDValue, ThemeInfo, ThemeData, BTDevice, WiFiNetwork } from './index';
 
 declare global {
   const __GIT_COMMIT__: string;
@@ -33,6 +33,19 @@ declare global {
       // Themes
       themeList: () => Promise<ThemeInfo[]>;
       themeLoad: (themeId: string) => Promise<ThemeData | null>;
+
+      // Bluetooth
+      btScan: () => Promise<BTDevice[]>;
+      btPair: (address: string) => Promise<boolean>;
+      btConnect: (address: string) => Promise<boolean>;
+      btDisconnect: (address: string) => Promise<boolean>;
+      btGetDevices: () => Promise<BTDevice[]>;
+
+      // WiFi
+      wifiScan: () => Promise<WiFiNetwork[]>;
+      wifiConnect: (ssid: string, password: string) => Promise<boolean>;
+      wifiDisconnect: () => Promise<boolean>;
+      wifiGetCurrent: () => Promise<string | null>;
     };
   }
 }

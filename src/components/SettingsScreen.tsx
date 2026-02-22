@@ -2,6 +2,10 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { useAppStore } from '@/stores/useAppStore';
 import { useOBDStore } from '@/stores/useOBDStore';
 import { OBDConnectionState, StubProfileName } from '@/types';
+import BluetoothSection from '@/components/settings/BluetoothSection';
+import WiFiSection from '@/components/settings/WiFiSection';
+import BoardEditSection from '@/components/settings/BoardEditSection';
+import ThemeSection from '@/components/settings/ThemeSection';
 
 function SettingsScreen() {
   const { hostname, systemStats, setScreen, setSystemStats } = useAppStore();
@@ -88,7 +92,7 @@ function SettingsScreen() {
 
   return (
     <div className="h-full flex flex-col bg-obd-dark p-6">
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-6">
         <button
           onClick={() => setScreen('dashboard')}
           className="px-4 py-2 text-obd-primary border border-obd-dim rounded-lg hover:bg-obd-dim/30 transition-colors"
@@ -99,7 +103,7 @@ function SettingsScreen() {
         <div className="w-20" />
       </div>
 
-      <div className="flex-1 space-y-6 overflow-auto">
+      <div className="flex-1 overflow-auto space-y-4">
         {/* System Info */}
         <div className="bg-obd-surface rounded-lg p-4">
           <h2 className="text-lg font-semibold text-obd-primary mb-3">System</h2>
@@ -150,6 +154,18 @@ function SettingsScreen() {
             )}
           </div>
         </div>
+
+        {/* Bluetooth */}
+        <BluetoothSection />
+
+        {/* WiFi */}
+        <WiFiSection />
+
+        {/* Board Editor */}
+        <BoardEditSection />
+
+        {/* Theme */}
+        <ThemeSection />
 
         {/* Stub Mode Settings */}
         {isStubMode && (
@@ -203,15 +219,10 @@ function SettingsScreen() {
             </div>
           </div>
         )}
-
-        {/* WiFi placeholder */}
-        <div className="bg-obd-surface rounded-lg p-4 opacity-50">
-          <h2 className="text-lg font-semibold text-obd-dim">WiFi (Phase 6)</h2>
-        </div>
       </div>
 
       {/* System Actions */}
-      <div className="flex gap-4 mt-6">
+      <div className="flex gap-4 mt-4">
         <button
           onClick={() => window.obd2API?.saveConfig()}
           className="flex-1 py-3 bg-obd-surface text-obd-accent border border-obd-dim rounded-lg hover:bg-obd-dim/30 transition-colors"

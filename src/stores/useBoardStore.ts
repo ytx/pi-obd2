@@ -15,6 +15,9 @@ interface BoardState {
   nextBoard: () => void;
   prevBoard: () => void;
   currentBoardIndex: () => number;
+  updatePanelInBoard: (boardId: string, slotIndex: number, panelDefId: string | null) => void;
+  addBoard: (board: Board) => void;
+  removeBoard: (boardId: string) => void;
 }
 
 const initialPanelDefs: Record<string, PanelDef> = {};
@@ -62,5 +65,29 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   currentBoardIndex: () => {
     const state = get();
     return state.boards.findIndex((b) => b.id === state.currentBoardId);
+  },
+
+  updatePanelInBoard: (boardId, slotIndex, panelDefId) => {
+    set((state) => ({
+      boards: state.boards.map((b) => {
+        if (b.id !== boardId) return b;
+        const panels = [...b.panels];
+        panels[slotIndex] = panelDefId;
+        return { ...b, panels };
+      }),
+    }));
+  },
+
+  addBoard: (board) => {
+    set((state) => ({ boards: [...state.boards, board] }));
+  },
+
+  removeBoard: (boardId) => {
+    set((state) => {
+      const boards = state.boards.filter((b) => b.id !== boardId);
+      if (boards.length === 0) return state; // keep at least one
+      const currentBoardId = state.currentBoardId === boardId ? boards[0].id : state.currentBoardId;
+      return { boards, currentBoardId };
+    });
   },
 }));

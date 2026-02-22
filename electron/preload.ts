@@ -48,6 +48,23 @@ const obd2API = {
   themeList: (): Promise<Array<{ id: string; apkFile: string; themeZip: string; name: string; screenshotBase64?: string }>> =>
     ipcRenderer.invoke('theme-list'),
   themeLoad: (themeId: string): Promise<unknown> => ipcRenderer.invoke('theme-load', themeId),
+
+  // Bluetooth
+  btScan: (): Promise<Array<{ address: string; name: string; paired: boolean; connected: boolean; rssi?: number }>> =>
+    ipcRenderer.invoke('bt-scan'),
+  btPair: (address: string): Promise<boolean> => ipcRenderer.invoke('bt-pair', address),
+  btConnect: (address: string): Promise<boolean> => ipcRenderer.invoke('bt-connect', address),
+  btDisconnect: (address: string): Promise<boolean> => ipcRenderer.invoke('bt-disconnect', address),
+  btGetDevices: (): Promise<Array<{ address: string; name: string; paired: boolean; connected: boolean; rssi?: number }>> =>
+    ipcRenderer.invoke('bt-get-devices'),
+
+  // WiFi
+  wifiScan: (): Promise<Array<{ ssid: string; signal: number; security: string; connected: boolean }>> =>
+    ipcRenderer.invoke('wifi-scan'),
+  wifiConnect: (ssid: string, password: string): Promise<boolean> =>
+    ipcRenderer.invoke('wifi-connect', ssid, password),
+  wifiDisconnect: (): Promise<boolean> => ipcRenderer.invoke('wifi-disconnect'),
+  wifiGetCurrent: (): Promise<string | null> => ipcRenderer.invoke('wifi-get-current'),
 };
 
 contextBridge.exposeInMainWorld('obd2API', obd2API);

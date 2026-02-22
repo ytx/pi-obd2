@@ -196,6 +196,59 @@ function registerIpcHandlers(): void {
   ipcMain.handle('theme-load', (_event, themeId: string) => {
     return loadTheme(themeId);
   });
+
+  // --- Bluetooth IPC (stubs - TODO: BlueZ D-Bus implementation) ---
+  ipcMain.handle('bt-scan', () => {
+    // TODO: Use BlueZ D-Bus to scan for devices
+    return [
+      { address: 'AA:BB:CC:DD:EE:01', name: 'OBD2 ELM327', paired: false, connected: false, rssi: -45 },
+      { address: 'AA:BB:CC:DD:EE:02', name: 'OBDII Scanner', paired: true, connected: false, rssi: -60 },
+    ];
+  });
+
+  ipcMain.handle('bt-pair', (_event, _address: string) => {
+    // TODO: BlueZ pair
+    return true;
+  });
+
+  ipcMain.handle('bt-connect', (_event, _address: string) => {
+    // TODO: BlueZ SPP connect
+    return true;
+  });
+
+  ipcMain.handle('bt-disconnect', (_event, _address: string) => {
+    // TODO: BlueZ disconnect
+    return true;
+  });
+
+  ipcMain.handle('bt-get-devices', () => {
+    // TODO: Get paired devices from BlueZ
+    return [];
+  });
+
+  // --- WiFi IPC (stubs - TODO: NetworkManager implementation) ---
+  ipcMain.handle('wifi-scan', () => {
+    // TODO: Use NetworkManager D-Bus to scan
+    return [
+      { ssid: 'HomeNetwork', signal: 85, security: 'WPA2', connected: true },
+      { ssid: 'Guest', signal: 60, security: 'WPA2', connected: false },
+    ];
+  });
+
+  ipcMain.handle('wifi-connect', (_event, _ssid: string, _password: string) => {
+    // TODO: NetworkManager connect
+    return true;
+  });
+
+  ipcMain.handle('wifi-disconnect', () => {
+    // TODO: NetworkManager disconnect
+    return true;
+  });
+
+  ipcMain.handle('wifi-get-current', () => {
+    // TODO: Get current WiFi SSID
+    return null;
+  });
 }
 
 app.whenReady().then(() => {

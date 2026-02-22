@@ -118,6 +118,23 @@ export interface Board {
   panels: (string | null)[];  // slot index → panelDef ID
 }
 
+// Bluetooth types (Phase 6)
+export interface BTDevice {
+  address: string;
+  name: string;
+  paired: boolean;
+  connected: boolean;
+  rssi?: number;
+}
+
+// WiFi types (Phase 6)
+export interface WiFiNetwork {
+  ssid: string;
+  signal: number;
+  security: string;
+  connected: boolean;
+}
+
 // Theme types (Phase 4)
 export interface ThemeInfo {
   id: string;
