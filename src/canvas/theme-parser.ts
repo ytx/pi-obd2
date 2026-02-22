@@ -1,5 +1,5 @@
-import { MeterConfig, NumericConfig } from '@/types';
-import { DEFAULT_METER_CONFIG, DEFAULT_NUMERIC_CONFIG } from '@/config/defaults';
+import { MeterConfig, NumericConfig, GraphConfig } from '@/types';
+import { DEFAULT_METER_CONFIG, DEFAULT_NUMERIC_CONFIG, DEFAULT_GRAPH_CONFIG } from '@/config/defaults';
 
 export interface ThemeProperties {
   [key: string]: string;
@@ -15,6 +15,7 @@ export interface ThemeAssets {
 export interface ParsedTheme {
   meterConfig: MeterConfig;
   numericConfig: NumericConfig;
+  graphConfig: GraphConfig;
   assets: ThemeAssets;
 }
 
@@ -110,11 +111,40 @@ export function propertiesToNumericConfig(props: ThemeProperties): NumericConfig
   };
 }
 
+/** Make a semi-transparent fill color from a hex line color */
+function toFillColor(hex: string): string {
+  // #RRGGBB or #RRGGBBAA → rgba(r,g,b,0.15)
+  const raw = hex.replace('#', '');
+  const r = parseInt(raw.substring(0, 2), 16);
+  const g = parseInt(raw.substring(2, 4), 16);
+  const b = parseInt(raw.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, 0.15)`;
+}
+
+/** Convert Torque properties to GraphConfig */
+export function propertiesToGraphConfig(props: ThemeProperties): GraphConfig {
+  const d = DEFAULT_GRAPH_CONFIG;
+  // graphLineColour → displayTextValueColour → default
+  const lineColor =
+    parseColor(props.graphLineColour) ??
+    parseColor(props.displayTextValueColour) ??
+    d.lineColor;
+  return {
+    timeWindowMs: d.timeWindowMs,
+    lineColor,
+    fillColor: toFillColor(lineColor),
+    gridColor: d.gridColor,
+    textColor: parseColor(props.displayTextTitleColour) ?? d.textColor,
+    lineWidth: d.lineWidth,
+  };
+}
+
 /** Parse full theme from properties + assets */
 export function parseTheme(props: ThemeProperties, assets: ThemeAssets): ParsedTheme {
   return {
     meterConfig: propertiesToMeterConfig(props),
     numericConfig: propertiesToNumericConfig(props),
+    graphConfig: propertiesToGraphConfig(props),
     assets,
   };
 }

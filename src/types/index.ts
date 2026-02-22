@@ -90,9 +90,20 @@ export interface NumericConfig {
 export interface PanelDef {
   id: string;
   kind: PanelKind;
-  pid: string;
-  label?: string;
   config: MeterConfig | GraphConfig | NumericConfig;
+}
+
+export interface BoardSlot {
+  panelDefId: string;  // display template
+  pid: string;         // data source
+  // Per-slot overrides (undefined = use PID defaults)
+  title?: string;
+  unit?: string;
+  min?: number;
+  max?: number;
+  decimals?: number;
+  step?: number;         // meter: scale step count
+  timeWindowMs?: number; // graph: time window in ms
 }
 
 export interface LayoutCell {
@@ -115,7 +126,7 @@ export interface Board {
   id: string;
   name: string;
   layoutId: string;
-  panels: (string | null)[];  // slot index → panelDef ID
+  panels: (BoardSlot | null)[];  // slot index → display + data
 }
 
 // Bluetooth types (Phase 6)
@@ -138,8 +149,6 @@ export interface WiFiNetwork {
 // Theme types (Phase 4)
 export interface ThemeInfo {
   id: string;
-  apkFile: string;
-  themeZip: string;
   name: string;
   screenshotBase64?: string;
 }

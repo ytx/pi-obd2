@@ -12,9 +12,10 @@ interface MeterPanelProps {
   max: number;
   unit: string;
   config: MeterConfig;
+  decimals?: number;
 }
 
-function MeterPanel({ pid, label, min, max, unit, config }: MeterPanelProps) {
+function MeterPanel({ pid, label, min, max, unit, config, decimals }: MeterPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { width, height, dpr } = useCanvasSize(containerRef);
@@ -34,8 +35,14 @@ function MeterPanel({ pid, label, min, max, unit, config }: MeterPanelProps) {
       return;
     }
     const img = new Image();
-    img.onload = () => setBgImage(img);
-    img.onerror = () => setBgImage(null);
+    img.onload = () => {
+      console.log('[MeterPanel] dial_background loaded:', img.naturalWidth, 'x', img.naturalHeight);
+      setBgImage(img);
+    };
+    img.onerror = (e) => {
+      console.error('[MeterPanel] dial_background load failed:', e);
+      setBgImage(null);
+    };
     img.src = dialBackgroundUrl;
   }, [dialBackgroundUrl]);
 
@@ -67,9 +74,10 @@ function MeterPanel({ pid, label, min, max, unit, config }: MeterPanelProps) {
       config: activeConfig,
       backgroundImage: bgImage,
       fontFamily,
+      decimals,
     });
     ctx.restore();
-  }, [width, height, dpr, val, min, max, label, unit, activeConfig, bgImage, fontFamily]);
+  }, [width, height, dpr, val, min, max, label, unit, activeConfig, bgImage, fontFamily, decimals]);
 
   return (
     <div ref={containerRef} className="h-full w-full bg-obd-surface rounded-lg overflow-hidden">

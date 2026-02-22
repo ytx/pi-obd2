@@ -5,8 +5,17 @@ import { useThemeStore } from '@/stores/useThemeStore';
 import { OBDConnectionState, StubProfileName, ThemeData } from '@/types';
 import BoardContainer from '@/components/boards/BoardContainer';
 
+// SVG icon components
+function GearIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="currentColor" width="20" height="20">
+      <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+    </svg>
+  );
+}
+
 function DashboardScreen() {
-  const { hostname, setScreen } = useAppStore();
+  const { setScreen } = useAppStore();
   const {
     connectionState,
     isStubMode,
@@ -24,6 +33,7 @@ function DashboardScreen() {
     useThemeStore();
 
   // Initialize: load available PIDs, stub mode, profiles, themes, register event listeners
+  // Then auto-connect
   useEffect(() => {
     if (!window.obd2API) return;
 
@@ -38,27 +48,14 @@ function DashboardScreen() {
       setConnectionState(s as OBDConnectionState),
     );
 
+    // Auto-connect
+    window.obd2API.obdConnect().catch((e) => console.warn('Auto-connect failed:', e));
+
     return () => {
       removeData();
       removeConn();
     };
   }, [setAvailablePids, setStubMode, setConnectionState, updateValues, setProfiles, setAvailableThemes]);
-
-  const handleConnect = async () => {
-    try {
-      await window.obd2API.obdConnect();
-    } catch (e) {
-      console.error('Connect failed:', e);
-    }
-  };
-
-  const handleDisconnect = async () => {
-    try {
-      await window.obd2API.obdDisconnect();
-    } catch (e) {
-      console.error('Disconnect failed:', e);
-    }
-  };
 
   const handleProfileChange = async (name: string) => {
     await window.obd2API.stubSetProfile(name);
@@ -83,60 +80,32 @@ function DashboardScreen() {
     error: 'text-obd-danger',
   };
 
-  return (
-    <div className="h-full flex flex-col bg-obd-dark p-4">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-2xl font-bold text-obd-primary">OBD2 Dashboard</h1>
-          <p className="text-sm text-obd-dim">{hostname || 'Unknown Host'}</p>
-        </div>
-        <div className="flex items-center gap-3">
-          {/* Connection state & control */}
-          <span className={`text-sm font-medium ${stateColor[connectionState] ?? 'text-obd-dim'}`}>
-            {connectionState.toUpperCase()}
-          </span>
-          {connectionState === 'disconnected' || connectionState === 'error' ? (
-            <button
-              onClick={handleConnect}
-              className="px-4 py-2 bg-green-700 text-white rounded-lg hover:bg-green-600 transition-colors text-sm"
-            >
-              Connect
-            </button>
-          ) : connectionState === 'connected' ? (
-            <button
-              onClick={handleDisconnect}
-              className="px-4 py-2 bg-obd-surface text-obd-warn border border-obd-dim rounded-lg hover:bg-obd-dim/30 transition-colors text-sm"
-            >
-              Disconnect
-            </button>
-          ) : null}
-          {isStubMode && (
-            <span className="text-xs bg-yellow-800 text-yellow-200 px-2 py-1 rounded">STUB</span>
-          )}
-          <button
-            onClick={() => setScreen('settings')}
-            className="px-4 py-2 bg-obd-surface text-obd-primary border border-obd-dim rounded-lg hover:bg-obd-dim/30 transition-colors text-sm"
-          >
-            Settings
-          </button>
-        </div>
-      </div>
+  // Connection state dot color
+  const dotColor: Record<string, string> = {
+    disconnected: 'bg-obd-dim',
+    connecting: 'bg-yellow-400 animate-pulse',
+    connected: 'bg-green-400',
+    error: 'bg-red-500',
+  };
 
-      {/* Controls bar */}
-      {connectionState === 'connected' && (
-        <div className="flex items-center gap-4 mb-4">
+  return (
+    <div className="h-full flex flex-col bg-obd-dark">
+      {/* Header - compact overlay bar */}
+      <div className="flex items-center justify-between px-3 py-1">
+        <div className="flex items-center gap-3">
+          {/* Connection state dot */}
+          <span className={`w-2.5 h-2.5 rounded-full ${dotColor[connectionState] ?? 'bg-obd-dim'}`} />
           {/* Stub profile selector */}
-          {isStubMode && profiles.length > 0 && (
-            <div className="flex gap-2">
+          {connectionState === 'connected' && isStubMode && profiles.length > 0 && (
+            <div className="flex gap-1">
               {profiles.map((p) => (
                 <button
                   key={p}
                   onClick={() => handleProfileChange(p)}
-                  className={`px-3 py-1 rounded text-sm transition-colors ${
+                  className={`px-2 py-0.5 rounded text-xs transition-colors ${
                     currentProfile === p
                       ? 'bg-obd-primary text-obd-dark font-bold'
-                      : 'bg-obd-surface text-obd-dim border border-obd-dim hover:bg-obd-dim/30'
+                      : 'text-obd-dim hover:bg-obd-dim/30'
                   }`}
                 >
                   {p}
@@ -145,13 +114,13 @@ function DashboardScreen() {
             </div>
           )}
           {/* Theme selector */}
-          {availableThemes.length > 0 && (
+          {connectionState === 'connected' && availableThemes.length > 0 && (
             <select
               value={currentThemeId ?? ''}
               onChange={(e) => handleThemeChange(e.target.value)}
-              className="px-3 py-1 rounded text-sm bg-obd-surface text-obd-primary border border-obd-dim"
+              className="px-2 py-0.5 rounded text-xs bg-obd-surface text-obd-primary border border-obd-dim"
             >
-              <option value="">Default Theme</option>
+              <option value="">Default</option>
               {availableThemes.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}
@@ -160,7 +129,13 @@ function DashboardScreen() {
             </select>
           )}
         </div>
-      )}
+        <button
+          onClick={() => setScreen('settings')}
+          className={`p-1.5 rounded-lg transition-colors hover:bg-obd-dim/30 ${stateColor[connectionState] ?? 'text-obd-dim'}`}
+        >
+          <GearIcon />
+        </button>
+      </div>
 
       {/* Data display */}
       <div className="flex-1 min-h-0">

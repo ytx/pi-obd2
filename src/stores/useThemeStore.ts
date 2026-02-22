@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import { ThemeInfo, ThemeData, MeterConfig, NumericConfig } from '@/types';
+import { ThemeInfo, ThemeData, MeterConfig, NumericConfig, GraphConfig } from '@/types';
 import { parseTheme } from '@/canvas/theme-parser';
-import { DEFAULT_METER_CONFIG, DEFAULT_NUMERIC_CONFIG } from '@/config/defaults';
+import { DEFAULT_METER_CONFIG, DEFAULT_NUMERIC_CONFIG, DEFAULT_GRAPH_CONFIG } from '@/config/defaults';
 
 interface ThemeState {
   availableThemes: ThemeInfo[];
@@ -10,6 +10,7 @@ interface ThemeState {
   // Parsed configs from theme
   themeMeterConfig: MeterConfig;
   themeNumericConfig: NumericConfig;
+  themeGraphConfig: GraphConfig;
   // Theme assets (data URLs)
   dialBackgroundUrl: string | null;
   displayBackgroundUrl: string | null;
@@ -27,6 +28,7 @@ export const useThemeStore = create<ThemeState>((set) => ({
   currentThemeData: null,
   themeMeterConfig: DEFAULT_METER_CONFIG,
   themeNumericConfig: DEFAULT_NUMERIC_CONFIG,
+  themeGraphConfig: DEFAULT_GRAPH_CONFIG,
   dialBackgroundUrl: null,
   displayBackgroundUrl: null,
   backgroundUrl: null,
@@ -35,6 +37,14 @@ export const useThemeStore = create<ThemeState>((set) => ({
   setAvailableThemes: (availableThemes) => set({ availableThemes }),
 
   applyTheme: (data) => {
+    console.log('[Theme] Applying:', data.info.id);
+    console.log('[Theme] Assets:', {
+      dialBackground: data.assets.dialBackground ? `${data.assets.dialBackground.length} chars` : 'none',
+      displayBackground: data.assets.displayBackground ? `${data.assets.displayBackground.length} chars` : 'none',
+      background: data.assets.background ? `${data.assets.background.length} chars` : 'none',
+      fontBase64: data.assets.fontBase64 ? `${data.assets.fontBase64.length} chars` : 'none',
+    });
+    console.log('[Theme] Properties:', data.properties);
     const parsed = parseTheme(data.properties, data.assets);
 
     // Load custom font if available
@@ -57,6 +67,7 @@ export const useThemeStore = create<ThemeState>((set) => ({
       currentThemeData: data,
       themeMeterConfig: parsed.meterConfig,
       themeNumericConfig: parsed.numericConfig,
+      themeGraphConfig: parsed.graphConfig,
       dialBackgroundUrl: data.assets.dialBackground ?? null,
       displayBackgroundUrl: data.assets.displayBackground ?? null,
       backgroundUrl: data.assets.background ?? null,
@@ -70,6 +81,7 @@ export const useThemeStore = create<ThemeState>((set) => ({
       currentThemeData: null,
       themeMeterConfig: DEFAULT_METER_CONFIG,
       themeNumericConfig: DEFAULT_NUMERIC_CONFIG,
+      themeGraphConfig: DEFAULT_GRAPH_CONFIG,
       dialBackgroundUrl: null,
       displayBackgroundUrl: null,
       backgroundUrl: null,

@@ -45,7 +45,7 @@ const obd2API = {
   stubGetConfig: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke('stub-get-config'),
 
   // Themes
-  themeList: (): Promise<Array<{ id: string; apkFile: string; themeZip: string; name: string; screenshotBase64?: string }>> =>
+  themeList: (): Promise<Array<{ id: string; name: string; screenshotBase64?: string }>> =>
     ipcRenderer.invoke('theme-list'),
   themeLoad: (themeId: string): Promise<unknown> => ipcRenderer.invoke('theme-load', themeId),
 

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import { Board, Layout, PanelDef } from '@/types';
-import { DEFAULT_BOARDS, DEFAULT_LAYOUTS, DEFAULT_ALL_PANELS } from '@/config/defaults';
+import { Board, BoardSlot, Layout, PanelDef } from '@/types';
+import { DEFAULT_BOARDS, DEFAULT_LAYOUTS, DEFAULT_PANEL_DEFS } from '@/config/defaults';
 
 interface BoardState {
   boards: Board[];
@@ -15,13 +15,13 @@ interface BoardState {
   nextBoard: () => void;
   prevBoard: () => void;
   currentBoardIndex: () => number;
-  updatePanelInBoard: (boardId: string, slotIndex: number, panelDefId: string | null) => void;
+  updateSlot: (boardId: string, slotIndex: number, slot: BoardSlot | null) => void;
   addBoard: (board: Board) => void;
   removeBoard: (boardId: string) => void;
 }
 
 const initialPanelDefs: Record<string, PanelDef> = {};
-for (const p of DEFAULT_ALL_PANELS) {
+for (const p of DEFAULT_PANEL_DEFS) {
   initialPanelDefs[p.id] = p;
 }
 
@@ -67,12 +67,12 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     return state.boards.findIndex((b) => b.id === state.currentBoardId);
   },
 
-  updatePanelInBoard: (boardId, slotIndex, panelDefId) => {
+  updateSlot: (boardId, slotIndex, slot) => {
     set((state) => ({
       boards: state.boards.map((b) => {
         if (b.id !== boardId) return b;
         const panels = [...b.panels];
-        panels[slotIndex] = panelDefId;
+        panels[slotIndex] = slot;
         return { ...b, panels };
       }),
     }));
@@ -85,7 +85,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   removeBoard: (boardId) => {
     set((state) => {
       const boards = state.boards.filter((b) => b.id !== boardId);
-      if (boards.length === 0) return state; // keep at least one
+      if (boards.length === 0) return state;
       const currentBoardId = state.currentBoardId === boardId ? boards[0].id : state.currentBoardId;
       return { boards, currentBoardId };
     });

@@ -26,7 +26,7 @@ function BoardView() {
             gridColumn: `${cell.col + 1} / span ${cell.colSpan ?? 1}`,
           }}
         >
-          <PanelSlot panelDefId={board.panels[i] ?? null} />
+          <PanelSlot slot={board.panels[i] ?? null} />
         </div>
       ))}
     </div>

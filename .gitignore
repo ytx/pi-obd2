@@ -7,4 +7,3 @@ release/
 *.log
 electron/git-version.ts
 themes/
-.theme-cache/
