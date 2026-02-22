@@ -38,7 +38,8 @@ export const DEFAULT_NUMERIC_CONFIG: NumericConfig = {
   decimals: 1,
 };
 
-export const DEFAULT_PANELS: PanelDef[] = [
+// Board 1 panels
+const BOARD1_PANELS: PanelDef[] = [
   {
     id: 'rpm-meter',
     kind: 'meter',
@@ -76,6 +77,57 @@ export const DEFAULT_PANELS: PanelDef[] = [
   },
 ];
 
+// Board 2 panels - engine details
+const BOARD2_PANELS: PanelDef[] = [
+  {
+    id: 'load-meter',
+    kind: 'meter',
+    pid: '0104',
+    label: 'Load',
+    config: { ...DEFAULT_METER_CONFIG },
+  },
+  {
+    id: 'intake-temp-numeric',
+    kind: 'numeric',
+    pid: '010F',
+    label: 'Intake',
+    config: { ...DEFAULT_NUMERIC_CONFIG, decimals: 0 },
+  },
+  {
+    id: 'manifold-numeric',
+    kind: 'numeric',
+    pid: '010B',
+    label: 'Manifold',
+    config: { ...DEFAULT_NUMERIC_CONFIG, decimals: 0 },
+  },
+  {
+    id: 'voltage-numeric',
+    kind: 'numeric',
+    pid: '0142',
+    label: 'Voltage',
+    config: { ...DEFAULT_NUMERIC_CONFIG, decimals: 1 },
+  },
+  {
+    id: 'fuel-numeric',
+    kind: 'numeric',
+    pid: '012F',
+    label: 'Fuel',
+    config: { ...DEFAULT_NUMERIC_CONFIG, decimals: 0 },
+  },
+  {
+    id: 'speed-graph',
+    kind: 'graph',
+    pid: '010D',
+    label: 'Speed',
+    config: { ...DEFAULT_GRAPH_CONFIG, lineColor: '#0abdc6', fillColor: 'rgba(10, 189, 198, 0.15)' },
+  },
+];
+
+export const DEFAULT_ALL_PANELS: PanelDef[] = [...BOARD1_PANELS, ...BOARD2_PANELS];
+
+// Keep old export for backward compat
+export const DEFAULT_PANELS = BOARD1_PANELS;
+
 export const DEFAULT_LAYOUT: Layout = {
   id: 'default',
   name: 'Default',
@@ -91,9 +143,36 @@ export const DEFAULT_LAYOUT: Layout = {
   ],
 };
 
+const DETAIL_LAYOUT: Layout = {
+  id: 'detail',
+  name: 'Detail',
+  columns: 4,
+  rows: 3,
+  gap: 4,
+  cells: [
+    { row: 0, col: 0, rowSpan: 2, colSpan: 2 }, // slot 0: Load meter
+    { row: 0, col: 2 },                           // slot 1: Intake temp
+    { row: 0, col: 3 },                           // slot 2: Manifold
+    { row: 1, col: 2 },                           // slot 3: Voltage
+    { row: 1, col: 3 },                           // slot 4: Fuel
+    { row: 2, col: 0, colSpan: 4 },              // slot 5: Speed graph
+  ],
+};
+
+export const DEFAULT_LAYOUTS: Layout[] = [DEFAULT_LAYOUT, DETAIL_LAYOUT];
+
 export const DEFAULT_BOARD: Board = {
   id: 'main',
   name: 'Main',
   layoutId: 'default',
   panels: ['rpm-meter', 'speed-meter', 'rpm-graph', 'coolant-numeric', 'throttle-numeric'],
 };
+
+const DETAIL_BOARD: Board = {
+  id: 'detail',
+  name: 'Detail',
+  layoutId: 'detail',
+  panels: ['load-meter', 'intake-temp-numeric', 'manifold-numeric', 'voltage-numeric', 'fuel-numeric', 'speed-graph'],
+};
+
+export const DEFAULT_BOARDS: Board[] = [DEFAULT_BOARD, DETAIL_BOARD];

@@ -3,7 +3,7 @@ import { useAppStore } from '@/stores/useAppStore';
 import { useOBDStore } from '@/stores/useOBDStore';
 import { useThemeStore } from '@/stores/useThemeStore';
 import { OBDConnectionState, StubProfileName, ThemeData } from '@/types';
-import BoardView from '@/components/boards/BoardView';
+import BoardContainer from '@/components/boards/BoardContainer';
 
 function DashboardScreen() {
   const { hostname, setScreen } = useAppStore();
@@ -171,7 +171,7 @@ function DashboardScreen() {
             </p>
           </div>
         ) : (
-          <BoardView />
+          <BoardContainer />
         )}
       </div>
     </div>
