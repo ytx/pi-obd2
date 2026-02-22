@@ -45,3 +45,75 @@ export interface StubConfig {
   interval: number;
   pidConfigs: Record<string, StubPidConfig>;
 }
+
+// Panel & Board types (Phase 3)
+export type PanelKind = 'numeric' | 'meter' | 'graph';
+
+export interface MeterConfig {
+  startAngle: number;  // 6時基準の除外角度 (degrees)
+  stopAngle: number;
+  tickCount: number;
+  tickInnerRadius: number;  // 0-1 倍率
+  tickOuterRadius: number;
+  tickColor: string;
+  needleColor: string;
+  needleLength: number;     // 0-1 倍率
+  needleSizeRatio: number;
+  textColor: string;
+  valueColor: string;
+  unitColor: string;
+  titleOffset: number;
+  valueOffset: number;
+  unitOffset: number;
+  scaleTextRadius: number;  // 0-1 倍率
+  fontScale: number;
+  hideTicks: boolean;
+}
+
+export interface GraphConfig {
+  timeWindowMs: number;
+  lineColor: string;
+  fillColor: string;
+  gridColor: string;
+  textColor: string;
+  lineWidth: number;
+}
+
+export interface NumericConfig {
+  fontSize: number;
+  valueColor: string;
+  unitColor: string;
+  titleColor: string;
+  decimals: number;
+}
+
+export interface PanelDef {
+  id: string;
+  kind: PanelKind;
+  pid: string;
+  label?: string;
+  config: MeterConfig | GraphConfig | NumericConfig;
+}
+
+export interface LayoutCell {
+  row: number;
+  col: number;
+  rowSpan?: number;
+  colSpan?: number;
+}
+
+export interface Layout {
+  id: string;
+  name: string;
+  columns: number;
+  rows: number;
+  gap: number;
+  cells: LayoutCell[];
+}
+
+export interface Board {
+  id: string;
+  name: string;
+  layoutId: string;
+  panels: (string | null)[];  // slot index → panelDef ID
+}

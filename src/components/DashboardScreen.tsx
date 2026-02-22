@@ -2,14 +2,13 @@ import { useEffect } from 'react';
 import { useAppStore } from '@/stores/useAppStore';
 import { useOBDStore } from '@/stores/useOBDStore';
 import { OBDConnectionState, StubProfileName } from '@/types';
+import BoardView from '@/components/boards/BoardView';
 
 function DashboardScreen() {
   const { hostname, setScreen } = useAppStore();
   const {
     connectionState,
-    currentValues,
     isStubMode,
-    availablePids,
     currentProfile,
     profiles,
     setConnectionState,
@@ -128,7 +127,7 @@ function DashboardScreen() {
       )}
 
       {/* Data display */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 min-h-0">
         {connectionState !== 'connected' ? (
           <div className="h-full flex items-center justify-center">
             <p className="text-obd-accent text-lg">
@@ -136,23 +135,7 @@ function DashboardScreen() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-            {availablePids.map((pid) => {
-              const val = currentValues[pid.id];
-              return (
-                <div
-                  key={pid.id}
-                  className="bg-obd-surface rounded-lg p-3 flex flex-col items-center"
-                >
-                  <span className="text-xs text-obd-dim mb-1">{pid.name}</span>
-                  <span className="text-2xl font-bold text-white">
-                    {val ? val.value.toFixed(pid.unit === 'rpm' ? 0 : 1) : '--'}
-                  </span>
-                  <span className="text-xs text-obd-accent">{pid.unit}</span>
-                </div>
-              );
-            })}
-          </div>
+          <BoardView />
         )}
       </div>
     </div>
