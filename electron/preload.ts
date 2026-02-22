@@ -15,6 +15,34 @@ const obd2API = {
   systemShutdown: (): Promise<void> => ipcRenderer.invoke('system-shutdown'),
   systemReboot: (): Promise<void> => ipcRenderer.invoke('system-reboot'),
   saveConfig: (): Promise<boolean> => ipcRenderer.invoke('save-config'),
+
+  // OBD2 connection
+  obdConnect: (): Promise<void> => ipcRenderer.invoke('obd-connect'),
+  obdDisconnect: (): Promise<void> => ipcRenderer.invoke('obd-disconnect'),
+  obdGetState: (): Promise<string> => ipcRenderer.invoke('obd-get-state'),
+  obdGetAvailablePids: (): Promise<Array<{ id: string; name: string; unit: string; min: number; max: number }>> =>
+    ipcRenderer.invoke('obd-get-available-pids'),
+  obdSetPollingPids: (pids: string[]): Promise<void> => ipcRenderer.invoke('obd-set-polling-pids', pids),
+  obdIsStubMode: (): Promise<boolean> => ipcRenderer.invoke('obd-is-stub-mode'),
+
+  // OBD2 events (main → renderer)
+  onOBDData: (callback: (values: Array<{ pid: string; value: number; timestamp: number }>) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, values: Array<{ pid: string; value: number; timestamp: number }>) => callback(values);
+    ipcRenderer.on('obd-data', listener);
+    return () => { ipcRenderer.removeListener('obd-data', listener); };
+  },
+  onOBDConnectionChange: (callback: (state: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: string) => callback(state);
+    ipcRenderer.on('obd-connection-change', listener);
+    return () => { ipcRenderer.removeListener('obd-connection-change', listener); };
+  },
+
+  // Stub control
+  stubGetProfiles: (): Promise<string[]> => ipcRenderer.invoke('stub-get-profiles'),
+  stubSetProfile: (name: string): Promise<void> => ipcRenderer.invoke('stub-set-profile', name),
+  stubSetPidConfig: (pid: string, config: Record<string, unknown>): Promise<void> =>
+    ipcRenderer.invoke('stub-set-pid-config', pid, config),
+  stubGetConfig: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke('stub-get-config'),
 };
 
 contextBridge.exposeInMainWorld('obd2API', obd2API);

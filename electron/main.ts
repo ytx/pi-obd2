@@ -3,7 +3,15 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 import { execSync } from 'child_process';
+import { StubSource } from './obd/stub-source';
+import { ELM327Source } from './obd/elm327-source';
+import { DataSource } from './obd/data-source';
+import { getAllPidInfos } from './obd/pids';
+import { StubPidConfig, StubProfileName } from './obd/types';
+
 let mainWindow: BrowserWindow | null = null;
+let dataSource: DataSource | null = null;
+let isStubMode = true; // Default to stub for development
 
 // CPU usage tracking
 let prevCpuIdle = 0;
@@ -34,6 +42,24 @@ function getCpuTemperature(): number {
   } catch {
     return 0;
   }
+}
+
+function getDataSource(): DataSource {
+  if (!dataSource) {
+    if (isStubMode) {
+      dataSource = new StubSource();
+    } else {
+      dataSource = new ELM327Source();
+    }
+    // Forward data and connection events to renderer
+    dataSource.onData((values) => {
+      mainWindow?.webContents.send('obd-data', values);
+    });
+    dataSource.onConnectionChange((state) => {
+      mainWindow?.webContents.send('obd-connection-change', state);
+    });
+  }
+  return dataSource;
 }
 
 function createWindow(): void {
@@ -102,13 +128,79 @@ function registerIpcHandlers(): void {
       return false;
     }
   });
+
+  // --- OBD2 IPC ---
+  ipcMain.handle('obd-connect', async () => {
+    const ds = getDataSource();
+    await ds.connect();
+  });
+
+  ipcMain.handle('obd-disconnect', async () => {
+    if (dataSource) {
+      await dataSource.disconnect();
+    }
+  });
+
+  ipcMain.handle('obd-get-state', () => {
+    return dataSource?.getState() ?? 'disconnected';
+  });
+
+  ipcMain.handle('obd-get-available-pids', () => {
+    return getAllPidInfos();
+  });
+
+  ipcMain.handle('obd-set-polling-pids', (_event, pids: string[]) => {
+    dataSource?.requestPids(pids);
+  });
+
+  ipcMain.handle('obd-is-stub-mode', () => {
+    return isStubMode;
+  });
+
+  // --- Stub-specific IPC ---
+  ipcMain.handle('stub-get-profiles', () => {
+    if (!(dataSource instanceof StubSource)) {
+      const stub = new StubSource();
+      const names = stub.getProfileNames();
+      stub.dispose();
+      return names;
+    }
+    return (dataSource as StubSource).getProfileNames();
+  });
+
+  ipcMain.handle('stub-set-profile', (_event, name: StubProfileName) => {
+    if (dataSource instanceof StubSource) {
+      (dataSource as StubSource).setProfile(name);
+    }
+  });
+
+  ipcMain.handle('stub-set-pid-config', (_event, pid: string, config: StubPidConfig) => {
+    if (dataSource instanceof StubSource) {
+      (dataSource as StubSource).setPidConfig(pid, config);
+    }
+  });
+
+  ipcMain.handle('stub-get-config', () => {
+    if (dataSource instanceof StubSource) {
+      return (dataSource as StubSource).getConfig();
+    }
+    return null;
+  });
 }
 
 app.whenReady().then(() => {
+  // Check environment variable for mode
+  if (process.env.OBD2_MODE === 'real') {
+    isStubMode = false;
+  }
   registerIpcHandlers();
   createWindow();
 });
 
 app.on('window-all-closed', () => {
+  if (dataSource) {
+    dataSource.dispose();
+    dataSource = null;
+  }
   app.quit();
 });
