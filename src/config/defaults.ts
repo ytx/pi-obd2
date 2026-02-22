@@ -61,23 +61,100 @@ export const DEFAULT_LAYOUT: Layout = {
   ],
 };
 
+// 1big + 4small + 1wide
 const DETAIL_LAYOUT: Layout = {
   id: 'detail',
-  name: 'Detail',
+  name: '1+4+Wide',
   columns: 4,
   rows: 3,
   gap: 4,
   cells: [
-    { row: 0, col: 0, rowSpan: 2, colSpan: 2 }, // slot 0
+    { row: 0, col: 0, rowSpan: 2, colSpan: 2 }, // slot 0: big
     { row: 0, col: 2 },                           // slot 1
     { row: 0, col: 3 },                           // slot 2
     { row: 1, col: 2 },                           // slot 3
     { row: 1, col: 3 },                           // slot 4
-    { row: 2, col: 0, colSpan: 4 },              // slot 5
+    { row: 2, col: 0, colSpan: 4 },              // slot 5: wide
   ],
 };
 
-export const DEFAULT_LAYOUTS: Layout[] = [DEFAULT_LAYOUT, DETAIL_LAYOUT];
+// 2x2 grid (4 equal panels)
+const QUAD_LAYOUT: Layout = {
+  id: 'quad',
+  name: '2x2',
+  columns: 2,
+  rows: 2,
+  gap: 4,
+  cells: [
+    { row: 0, col: 0 },
+    { row: 0, col: 1 },
+    { row: 1, col: 0 },
+    { row: 1, col: 1 },
+  ],
+};
+
+// 1big + 3small
+const BIG1_LAYOUT: Layout = {
+  id: 'big1',
+  name: '1+3',
+  columns: 4,
+  rows: 2,
+  gap: 4,
+  cells: [
+    { row: 0, col: 0, rowSpan: 2, colSpan: 2 }, // slot 0: big
+    { row: 0, col: 2, colSpan: 2 },              // slot 1
+    { row: 1, col: 2 },                           // slot 2
+    { row: 1, col: 3 },                           // slot 3
+  ],
+};
+
+// 3x2 grid (6 equal panels)
+const GRID6_LAYOUT: Layout = {
+  id: 'grid6',
+  name: '3x2',
+  columns: 3,
+  rows: 2,
+  gap: 4,
+  cells: [
+    { row: 0, col: 0 },
+    { row: 0, col: 1 },
+    { row: 0, col: 2 },
+    { row: 1, col: 0 },
+    { row: 1, col: 1 },
+    { row: 1, col: 2 },
+  ],
+};
+
+// 1wide top + 4 bottom
+const WIDE_TOP_LAYOUT: Layout = {
+  id: 'wide-top',
+  name: 'Wide+4',
+  columns: 4,
+  rows: 3,
+  gap: 4,
+  cells: [
+    { row: 0, col: 0, colSpan: 4 },              // slot 0: wide
+    { row: 1, col: 0, rowSpan: 2, colSpan: 2 },  // slot 1: big
+    { row: 1, col: 2, rowSpan: 2, colSpan: 2 },  // slot 2: big
+  ],
+};
+
+// Single full-screen panel
+const SINGLE_LAYOUT: Layout = {
+  id: 'single',
+  name: 'Single',
+  columns: 1,
+  rows: 1,
+  gap: 0,
+  cells: [
+    { row: 0, col: 0 },
+  ],
+};
+
+export const DEFAULT_LAYOUTS: Layout[] = [
+  DEFAULT_LAYOUT, DETAIL_LAYOUT, QUAD_LAYOUT,
+  BIG1_LAYOUT, GRID6_LAYOUT, WIDE_TOP_LAYOUT, SINGLE_LAYOUT,
+];
 
 export const DEFAULT_BOARD: Board = {
   id: 'main',

@@ -7,8 +7,12 @@ function BoardView() {
   const layout = useBoardStore((s) => s.getCurrentLayout());
   const backgroundUrl = useThemeStore((s) => s.backgroundUrl);
 
+  // Key on board+layout to force full re-render when switching boards
+  const gridKey = `${board.id}-${layout.id}`;
+
   return (
     <div
+      key={gridKey}
       className="w-full h-full bg-cover bg-center"
       style={{
         display: 'grid',
@@ -20,7 +24,7 @@ function BoardView() {
     >
       {layout.cells.map((cell, i) => (
         <div
-          key={i}
+          key={`${gridKey}-${i}`}
           style={{
             gridRow: `${cell.row + 1} / span ${cell.rowSpan ?? 1}`,
             gridColumn: `${cell.col + 1} / span ${cell.colSpan ?? 1}`,

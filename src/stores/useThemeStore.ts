@@ -47,21 +47,7 @@ export const useThemeStore = create<ThemeState>((set) => ({
     console.log('[Theme] Properties:', data.properties);
     const parsed = parseTheme(data.properties, data.assets);
 
-    // Load custom font if available
-    let fontLoaded = false;
-    if (data.assets.fontBase64) {
-      const fontFace = new FontFace(
-        'TorqueThemeFont',
-        `url(data:font/ttf;base64,${data.assets.fontBase64})`,
-      );
-      fontFace.load().then((loaded) => {
-        document.fonts.add(loaded);
-      }).catch((e) => {
-        console.warn('Failed to load theme font:', e);
-      });
-      fontLoaded = true;
-    }
-
+    // Set theme immediately (without font)
     set({
       currentThemeId: data.info.id,
       currentThemeData: data,
@@ -71,8 +57,22 @@ export const useThemeStore = create<ThemeState>((set) => ({
       dialBackgroundUrl: data.assets.dialBackground ?? null,
       displayBackgroundUrl: data.assets.displayBackground ?? null,
       backgroundUrl: data.assets.background ?? null,
-      fontLoaded,
+      fontLoaded: false,
     });
+
+    // Load custom font asynchronously, set fontLoaded after completion
+    if (data.assets.fontBase64) {
+      const fontFace = new FontFace(
+        'TorqueThemeFont',
+        `url(data:font/ttf;base64,${data.assets.fontBase64})`,
+      );
+      fontFace.load().then((loaded) => {
+        document.fonts.add(loaded);
+        set({ fontLoaded: true });
+      }).catch((e) => {
+        console.warn('Failed to load theme font:', e);
+      });
+    }
   },
 
   clearTheme: () =>

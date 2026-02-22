@@ -8,13 +8,57 @@ function BoardEditSection() {
   const layouts = useBoardStore((s) => s.layouts);
   const panelDefs = useBoardStore((s) => s.panelDefs);
   const updateSlot = useBoardStore((s) => s.updateSlot);
+  const addBoard = useBoardStore((s) => s.addBoard);
+  const removeBoard = useBoardStore((s) => s.removeBoard);
+  const renameBoard = useBoardStore((s) => s.renameBoard);
+  const changeBoardLayout = useBoardStore((s) => s.changeBoardLayout);
   const [selectedBoardId, setSelectedBoardId] = useState(boards[0]?.id ?? '');
   const [editingSlot, setEditingSlot] = useState<number | null>(null);
+  const [renamingBoard, setRenamingBoard] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
 
   const selectedBoard = boards.find((b) => b.id === selectedBoardId);
   const layout = selectedBoard ? layouts[selectedBoard.layoutId] : null;
   const availablePids = useOBDStore((s) => s.availablePids);
   const allPanelDefs = Object.values(panelDefs);
+  const allLayouts = Object.values(layouts);
+
+  const handleAddBoard = () => {
+    const id = `board-${Date.now()}`;
+    const layoutId = allLayouts[0]?.id ?? 'default';
+    const ly = layouts[layoutId];
+    const panels: (BoardSlot | null)[] = Array.from({ length: ly?.cells.length ?? 0 }, () => null);
+    addBoard({ id, name: `Board ${boards.length + 1}`, layoutId, panels });
+    setSelectedBoardId(id);
+    setEditingSlot(null);
+  };
+
+  const handleDeleteBoard = () => {
+    if (!selectedBoard || boards.length <= 1) return;
+    const nextId = boards.find((b) => b.id !== selectedBoard.id)?.id ?? '';
+    removeBoard(selectedBoard.id);
+    setSelectedBoardId(nextId);
+    setEditingSlot(null);
+  };
+
+  const startRename = () => {
+    if (!selectedBoard) return;
+    setRenameValue(selectedBoard.name);
+    setRenamingBoard(true);
+  };
+
+  const commitRename = () => {
+    if (selectedBoard && renameValue.trim()) {
+      renameBoard(selectedBoard.id, renameValue.trim());
+    }
+    setRenamingBoard(false);
+  };
+
+  const handleLayoutChange = (layoutId: string) => {
+    if (!selectedBoard) return;
+    changeBoardLayout(selectedBoard.id, layoutId);
+    setEditingSlot(null);
+  };
 
   const updateField = (slotIndex: number, field: string, value: string) => {
     if (!selectedBoard) return;
@@ -62,25 +106,114 @@ function BoardEditSection() {
     <div className="bg-obd-surface rounded-lg p-4">
       <h2 className="text-lg font-semibold text-obd-primary mb-3">Board Editor</h2>
 
-      {/* Board selector */}
+      {/* Board selector + management */}
       <div className="mb-4">
-        <label className="text-sm text-obd-dim block mb-1">Board</label>
-        <div className="flex gap-2">
-          {boards.map((b) => (
-            <button
-              key={b.id}
-              onClick={() => { setSelectedBoardId(b.id); setEditingSlot(null); }}
-              className={`px-3 py-1 rounded text-sm transition-colors ${
-                selectedBoardId === b.id
-                  ? 'bg-obd-primary text-obd-dark font-bold'
-                  : 'bg-obd-dark text-obd-dim border border-obd-dim hover:bg-obd-dim/30'
-              }`}
-            >
-              {b.name}
-            </button>
-          ))}
+        <div className="flex items-center gap-2 mb-2">
+          <div className="flex gap-1 flex-1 flex-wrap">
+            {boards.map((b) => (
+              <button
+                key={b.id}
+                onClick={() => { setSelectedBoardId(b.id); setEditingSlot(null); setRenamingBoard(false); }}
+                className={`px-3 py-1 rounded text-sm transition-colors ${
+                  selectedBoardId === b.id
+                    ? 'bg-obd-primary text-obd-dark font-bold'
+                    : 'bg-obd-dark text-obd-dim border border-obd-dim hover:bg-obd-dim/30'
+                }`}
+              >
+                {b.name}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={handleAddBoard}
+            className="px-2 py-1 text-sm bg-green-700 text-white rounded hover:bg-green-600 transition-colors"
+            title="Add board"
+          >
+            +
+          </button>
         </div>
+
+        {/* Board actions: rename, layout, delete */}
+        {selectedBoard && (
+          <div className="flex items-center gap-2 text-xs">
+            {/* Rename */}
+            {renamingBoard ? (
+              <div className="flex items-center gap-1">
+                <input
+                  type="text"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setRenamingBoard(false); }}
+                  className="w-32 px-2 py-1 bg-obd-dark text-white border border-obd-dim rounded"
+                  autoFocus
+                />
+                <button onClick={commitRename} className="px-2 py-1 bg-obd-primary text-obd-dark rounded">OK</button>
+                <button onClick={() => setRenamingBoard(false)} className="px-2 py-1 text-obd-dim">Cancel</button>
+              </div>
+            ) : (
+              <button onClick={startRename} className="px-2 py-1 text-obd-dim hover:text-white transition-colors">
+                Rename
+              </button>
+            )}
+            <span className="text-obd-dim">|</span>
+            {/* Layout selector */}
+            <label className="flex items-center gap-1">
+              <span className="text-obd-dim">Layout:</span>
+              <select
+                value={selectedBoard.layoutId}
+                onChange={(e) => handleLayoutChange(e.target.value)}
+                className="px-2 py-1 bg-obd-dark text-white border border-obd-dim rounded"
+              >
+                {allLayouts.map((ly) => (
+                  <option key={ly.id} value={ly.id}>
+                    {ly.name} ({ly.cells.length} slots)
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="text-obd-dim">|</span>
+            {/* Delete */}
+            <button
+              onClick={handleDeleteBoard}
+              disabled={boards.length <= 1}
+              className="px-2 py-1 text-obd-danger hover:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              Delete
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Layout preview mini-grid */}
+      {selectedBoard && layout && (
+        <div
+          className="mb-3 h-16 rounded overflow-hidden border border-obd-dim/30"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: `repeat(${layout.columns}, 1fr)`,
+            gridTemplateRows: `repeat(${layout.rows}, 1fr)`,
+            gap: '2px',
+          }}
+        >
+          {layout.cells.map((cell, i) => {
+            const slot = selectedBoard.panels[i];
+            return (
+              <div
+                key={i}
+                className={`rounded-sm flex items-center justify-center text-[9px] ${
+                  slot ? 'bg-obd-primary/20 text-obd-primary' : 'bg-obd-dark/50 text-obd-dim'
+                }`}
+                style={{
+                  gridRow: `${cell.row + 1} / span ${cell.rowSpan ?? 1}`,
+                  gridColumn: `${cell.col + 1} / span ${cell.colSpan ?? 1}`,
+                }}
+              >
+                {i}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Panel slots */}
       {selectedBoard && layout && (

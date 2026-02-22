@@ -47,7 +47,7 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 - `components/panels/MeterPanel.tsx` - メーターパネル（Canvas）
 - `components/panels/GraphPanel.tsx` - グラフパネル（Canvas、TimeBuffer）
 - `components/panels/useCanvasSize.ts` - ResizeObserver + devicePixelRatio フック
-- `components/settings/BoardEditSection.tsx` - ボード編集（パネル割当 + 詳細設定）
+- `components/settings/BoardEditSection.tsx` - ボード編集（追加・削除・名前変更・レイアウト変更・パネル割当・詳細設定）
 - `components/settings/BluetoothSection.tsx` - BT 設定（スキャン・ペアリング）
 - `components/settings/WiFiSection.tsx` - WiFi 設定
 - `components/settings/ThemeSection.tsx` - テーマ選択（スクリーンショット付き）
@@ -67,11 +67,30 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 
 - **Board** - ボード（名前、レイアウト参照、`panels: (BoardSlot | null)[]`）
 - **BoardSlot** - スロット（`panelDefId` 表示テンプレート + `pid` データソース + オーバーライド）
-- **Layout** - レイアウト（CSS Grid 定義: columns, rows, gap, cells）
+- **Layout** - レイアウト（CSS Grid 定義: columns, rows, gap, cells）— プリセット7種
 - **PanelDef** - パネル定義（`id`, `kind`, `config` — PID 非依存の表示テンプレート）
 - **PanelKind** - `'numeric' | 'meter' | 'graph'`
 
 データソース（PID）と表示形式（PanelDef）は分離されており、任意の組み合わせが可能。
+
+### プリセットレイアウト
+
+| ID | 名前 | スロット数 | 構成 |
+|---|---|---|---|
+| `default` | Default | 5 | 2大 + 1横長 + 2小 |
+| `detail` | 1+4+Wide | 6 | 1大 + 4小 + 1横長 |
+| `quad` | 2x2 | 4 | 4等分 |
+| `big1` | 1+3 | 4 | 1大 + 1横長 + 2小 |
+| `grid6` | 3x2 | 6 | 6等分 |
+| `wide-top` | Wide+4 | 3 | 1横長 + 2大 |
+| `single` | Single | 1 | フルスクリーン1枚 |
+
+### ボード管理
+
+`useBoardStore` で管理:
+- `addBoard` / `removeBoard` / `renameBoard` — ボード追加・削除・名前変更
+- `changeBoardLayout` — レイアウト変更（パネル配列を自動リサイズ: 既存保持、不足分は null）
+- `nextBoard` / `prevBoard` — キー/スワイプでのボード切替
 
 ### BoardSlot オーバーライド
 
@@ -144,6 +163,13 @@ themes/<theme-name>/
 - Canvas: `mono-text.ts` — 0-9 の最大幅を measureText で実測し、各桁を等間隔描画
 - HTML (NumericPanel): 各桁を固定幅 `inline-block` span で描画、幅は Canvas measureText で実測
 - プロポーショナルフォント（テーマ TTF）でも値がブレない
+- 固定 em 値ではなくフォントごとに実測が必要（フォントにより桁幅が大きく異なる）
+
+**テーマフォントのロードタイミング:**
+- `useThemeStore.applyTheme()` はテーマ設定を `fontLoaded: false` で即座に反映
+- `FontFace.load()` の Promise 完了後に `set({ fontLoaded: true })` で更新
+- NumericPanel の `useDigitWidth` は `document.fonts.ready` 後に再測定
+- 同期的に `fontLoaded = true` にすると、フォント未ロード時の幅で測定されて数字が重なるバグが起きる
 
 ### UI 構成
 
@@ -157,7 +183,7 @@ themes/<theme-name>/
 - OBD2（接続状態）
 - Bluetooth（スキャン・ペアリング）
 - WiFi（スキャン・接続）
-- Board Editor（ボード選択、スロット毎の表示種別・PID・詳細設定）
+- Board Editor（ボード追加/削除/名前変更、レイアウト選択+ミニプレビュー、スロット毎の表示種別・PID・詳細設定）
 - Theme（スクリーンショット付きテーマ選択）
 - Stub Simulator（開発用）
 - System Actions（再起動・シャットダウン・設定保存）
@@ -209,3 +235,4 @@ npm run package       # Electron パッケージング (Linux ARM64)
 - センサー追加を考慮し、データソースを抽象化（現時点は OBD2 のみ）
 - Canvas 描画は純粋関数（`renderMeter()`, `renderGraph()`）、コンポーネントから分離
 - テーマ設定は parser で変換し、各コンポーネントで `currentThemeId ? themeConfig : defaultConfig` で切替
+- BoardView の CSS Grid セルは `key={boardId-layoutId-index}` でボード/レイアウト切替時に DOM を再生成（`key={i}` だと前レイアウトの gridRow/gridColumn スタイルが残るバグ）

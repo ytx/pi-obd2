@@ -18,6 +18,8 @@ interface BoardState {
   updateSlot: (boardId: string, slotIndex: number, slot: BoardSlot | null) => void;
   addBoard: (board: Board) => void;
   removeBoard: (boardId: string) => void;
+  renameBoard: (boardId: string, name: string) => void;
+  changeBoardLayout: (boardId: string, layoutId: string) => void;
 }
 
 const initialPanelDefs: Record<string, PanelDef> = {};
@@ -88,6 +90,30 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       if (boards.length === 0) return state;
       const currentBoardId = state.currentBoardId === boardId ? boards[0].id : state.currentBoardId;
       return { boards, currentBoardId };
+    });
+  },
+
+  renameBoard: (boardId, name) => {
+    set((state) => ({
+      boards: state.boards.map((b) => (b.id === boardId ? { ...b, name } : b)),
+    }));
+  },
+
+  changeBoardLayout: (boardId, layoutId) => {
+    const state = get();
+    const layout = state.layouts[layoutId];
+    if (!layout) return;
+    set({
+      boards: state.boards.map((b) => {
+        if (b.id !== boardId) return b;
+        const slotCount = layout.cells.length;
+        // Resize panels array: keep existing slots, add nulls or trim
+        const panels: (BoardSlot | null)[] = Array.from(
+          { length: slotCount },
+          (_, i) => b.panels[i] ?? null,
+        );
+        return { ...b, layoutId, panels };
+      }),
     });
   },
 }));

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { NumericConfig } from '@/types';
 import { useOBDStore } from '@/stores/useOBDStore';
 import { useThemeStore } from '@/stores/useThemeStore';
@@ -47,12 +47,13 @@ function NumericPanel({ pid, label, unit, config }: NumericPanelProps) {
   );
 }
 
-/** Measure the widest digit (0-9) in px for the given font using an offscreen canvas */
+/** Measure the widest digit (0-9) in px using an offscreen canvas.
+ *  Re-measures when font actually becomes available via document.fonts.ready */
 function useDigitWidth(fontSize: number, fontFamily?: string): number {
-  return useMemo(() => {
+  const measure = () => {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    if (!ctx) return fontSize * 0.65; // fallback
+    if (!ctx) return fontSize * 0.65;
     ctx.font = `bold ${fontSize}px ${fontFamily ?? 'sans-serif'}`;
     let maxW = 0;
     for (let d = 0; d <= 9; d++) {
@@ -60,7 +61,18 @@ function useDigitWidth(fontSize: number, fontFamily?: string): number {
       if (w > maxW) maxW = w;
     }
     return Math.ceil(maxW);
+  };
+
+  const [width, setWidth] = useState(() => measure());
+
+  useEffect(() => {
+    // Immediate measure (may use fallback font)
+    setWidth(measure());
+    // Re-measure after all fonts are ready
+    document.fonts.ready.then(() => setWidth(measure()));
   }, [fontSize, fontFamily]);
+
+  return width;
 }
 
 /** Render each digit in a fixed-width cell so proportional fonts don't jitter */
