@@ -40,6 +40,18 @@ function parseFloat0(value: string | undefined, fallback: number): number {
   return isNaN(n) ? fallback : n;
 }
 
+// Torque uses an internal base radius smaller than the image half-size.
+// Empirically, multiplying Torque radius values by ~0.65 maps them to our
+// coordinate system (fraction of canvas radius).  TODO: verify against
+// Torque Wiki once it is back online.
+const TORQUE_RADIUS_SCALE = 0.65;
+
+function torqueRadius(value: string | undefined, fallback: number): number {
+  if (value === undefined || value === '') return fallback;
+  const n = parseFloat(value);
+  return isNaN(n) ? fallback : n * TORQUE_RADIUS_SCALE;
+}
+
 function parseBool(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined || value === '') return fallback;
   return value.toLowerCase() === 'true';
@@ -81,11 +93,11 @@ export function propertiesToMeterConfig(
     startAngle,
     stopAngle,
     tickCount: d.tickCount,
-    tickInnerRadius: parseFloat0(props.dialTickInnerRadius, d.tickInnerRadius),
-    tickOuterRadius: parseFloat0(props.dialTickOuterRadius, d.tickOuterRadius),
+    tickInnerRadius: torqueRadius(props.dialTickInnerRadius, d.tickInnerRadius),
+    tickOuterRadius: torqueRadius(props.dialTickOuterRadius, d.tickOuterRadius),
     tickColor,
     needleColor: indicatorColor ?? needleColor,
-    needleLength: parseFloat0(props.dialNeedleLength, d.needleLength),
+    needleLength: torqueRadius(props.dialNeedleLength, d.needleLength),
     needleSizeRatio: parseFloat0(props.dialNeedleSizeRatio, d.needleSizeRatio),
     textColor: titleColor,
     valueColor,
@@ -93,7 +105,7 @@ export function propertiesToMeterConfig(
     titleOffset: parseFloat0(props.dialNeedleTitleTextOffset, d.titleOffset),
     valueOffset: parseFloat0(props.dialNeedleValueTextOffset, d.valueOffset),
     unitOffset: parseFloat0(props.dialNeedleUnitTextOffset, d.unitOffset),
-    scaleTextRadius: parseFloat0(props.globalTextRadius, d.scaleTextRadius),
+    scaleTextRadius: torqueRadius(props.globalTextRadius, d.scaleTextRadius),
     fontScale: parseFloat0(props.globalFontScale, d.fontScale),
     hideTicks,
   };

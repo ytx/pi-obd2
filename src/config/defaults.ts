@@ -16,7 +16,7 @@ export const DEFAULT_METER_CONFIG: MeterConfig = {
   titleOffset: -0.25,
   valueOffset: 0.15,
   unitOffset: 0.30,
-  scaleTextRadius: 0.65,
+  scaleTextRadius: 0.75,
   fontScale: 1.0,
   hideTicks: false,
 };
@@ -184,3 +184,5 @@ const DETAIL_BOARD: Board = {
 };
 
 export const DEFAULT_BOARDS: Board[] = [DEFAULT_BOARD, DETAIL_BOARD];
+
+export const DEFAULT_SCREEN_PADDING = 0;

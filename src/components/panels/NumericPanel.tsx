@@ -24,7 +24,7 @@ function NumericPanel({ pid, label, unit, config }: NumericPanelProps) {
     <div
       className="h-full flex flex-col items-center justify-center rounded-lg p-2 bg-cover bg-center"
       style={{
-        backgroundColor: displayBackgroundUrl ? undefined : 'var(--color-obd-surface)',
+        backgroundColor: displayBackgroundUrl || currentThemeId ? undefined : 'var(--color-obd-surface)',
         backgroundImage: displayBackgroundUrl ? `url(${displayBackgroundUrl})` : undefined,
       }}
     >

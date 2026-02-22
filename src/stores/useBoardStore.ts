@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { Board, BoardSlot, Layout, PanelDef } from '@/types';
-import { DEFAULT_BOARDS, DEFAULT_LAYOUTS, DEFAULT_PANEL_DEFS } from '@/config/defaults';
+import { DEFAULT_BOARDS, DEFAULT_LAYOUTS, DEFAULT_PANEL_DEFS, DEFAULT_SCREEN_PADDING } from '@/config/defaults';
 
 interface BoardState {
   boards: Board[];
@@ -20,6 +20,8 @@ interface BoardState {
   removeBoard: (boardId: string) => void;
   renameBoard: (boardId: string, name: string) => void;
   changeBoardLayout: (boardId: string, layoutId: string) => void;
+  screenPadding: number;
+  setScreenPadding: (padding: number) => void;
 }
 
 const initialPanelDefs: Record<string, PanelDef> = {};
@@ -37,6 +39,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   layouts: initialLayouts,
   panelDefs: initialPanelDefs,
   currentBoardId: DEFAULT_BOARDS[0].id,
+  screenPadding: DEFAULT_SCREEN_PADDING,
 
   getCurrentBoard: () => {
     const state = get();
@@ -98,6 +101,8 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       boards: state.boards.map((b) => (b.id === boardId ? { ...b, name } : b)),
     }));
   },
+
+  setScreenPadding: (screenPadding) => set({ screenPadding }),
 
   changeBoardLayout: (boardId, layoutId) => {
     const state = get();

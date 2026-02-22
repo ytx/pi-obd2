@@ -37,8 +37,10 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 
 ### React レンダラ (`src/`)
 
-- `components/DashboardScreen.tsx` - メイン画面（コンパクトヘッダー + ボード表示）
-- `components/SettingsScreen.tsx` - 設定画面
+- `components/DashboardScreen.tsx` - メイン画面（フルスクリーンボード + タップゾーンナビ + 接続ドットオーバーレイ）
+- `components/settings/SystemSettingsScreen.tsx` - システム設定（接続・BT・WiFi・システム情報・アクション）
+- `components/settings/DisplaySettingsScreen.tsx` - 表示設定（テーマ・ボード編集）
+- `components/settings/DevSettingsScreen.tsx` - 開発設定（スタブシミュレーター）
 - `components/boards/BoardContainer.tsx` - ボード切替コンテナ（スワイプ + キーボード）
 - `components/boards/BoardView.tsx` - CSS Grid ボードビュー
 - `components/boards/useSwipe.ts` - タッチスワイプ検出フック
@@ -174,19 +176,24 @@ themes/<theme-name>/
 ### UI 構成
 
 **ダッシュボード画面:**
-- コンパクトヘッダー: 接続状態ドット + STUB プロファイル切替 + テーマ切替 + 歯車アイコン（設定）
-- ボード表示領域を最大化、起動時自動接続
+- ヘッダーなし、フルスクリーンボード表示、起動時自動接続
+- 接続状態ドット: 右上にオーバーレイ（pointer-events-none）
 - ボード切替: 左右フリック / 左右キー、インジケータドット表示
+- タップゾーンナビ（角100x100px）: 右上→システム設定、右下→表示設定、左下→開発設定
 
-**設定画面:**
-- System（ホスト名、CPU、メモリ、稼働時間）
-- OBD2（接続状態）
+**システム設定画面（右上タップ）:**
+- OBD2 接続（状態、接続/切断、STUB モード表示）
 - Bluetooth（スキャン・ペアリング）
 - WiFi（スキャン・接続）
-- Board Editor（ボード追加/削除/名前変更、レイアウト選択+ミニプレビュー、スロット毎の表示種別・PID・詳細設定）
+- System（ホスト名、CPU、メモリ、稼働時間）
+- System Actions（Save Config・Reboot・Shutdown）
+
+**表示設定画面（右下タップ）:**
 - Theme（スクリーンショット付きテーマ選択）
-- Stub Simulator（開発用）
-- System Actions（再起動・シャットダウン・設定保存）
+- Board Editor（ボード追加/削除/名前変更、レイアウト選択+ミニプレビュー、スロット毎の表示種別・PID・詳細設定）
+
+**開発設定画面（左下タップ）:**
+- Stub Simulator（プロファイル切替、PID ベース値スライダー）
 
 ### CSP (Content Security Policy)
 
@@ -236,3 +243,21 @@ npm run package       # Electron パッケージング (Linux ARM64)
 - Canvas 描画は純粋関数（`renderMeter()`, `renderGraph()`）、コンポーネントから分離
 - テーマ設定は parser で変換し、各コンポーネントで `currentThemeId ? themeConfig : defaultConfig` で切替
 - BoardView の CSS Grid セルは `key={boardId-layoutId-index}` でボード/レイアウト切替時に DOM を再生成（`key={i}` だと前レイアウトの gridRow/gridColumn スタイルが残るバグ）
+
+## TODO / 未解決事項
+
+### Torque テーマ座標系の正確な仕様確認
+
+**状況:** Torque の properties.txt における半径系プロパティの座標系が不明。公式 Wiki (https://wiki.torque-bhp.com/view/Themes) が 503 で確認できなかった（2026-02-23 時点）。
+
+**暫定対応:** `theme-parser.ts` で `TORQUE_RADIUS_SCALE = 0.65` の変換係数を適用中。red-sport テーマのスクリーンショットとの目視比較で近似的に合う値。
+
+**対象プロパティ:**
+- `globalTextRadius` — 目盛り数値の配置半径（red-sport: 0.85 → 0.55 で合う）
+- `dialTickInnerRadius` / `dialTickOuterRadius` — 目盛り線の内径/外径（red-sport: 1.50/1.55）
+- `dialNeedleLength` — 針の長さ（red-sport: 1.20）
+
+**未対応:**
+- 針の描画仕様が Torque と異なる（形状・サイズ比の解釈が不明）
+
+**アクション:** Torque Wiki が復活したら正確な座標系を確認し、`TORQUE_RADIUS_SCALE` と針の描画ロジックを修正する

@@ -1,4 +1,4 @@
-export type Screen = 'dashboard' | 'settings';
+export type Screen = 'dashboard' | 'system-settings' | 'display-settings' | 'dev-settings';
 
 export interface SystemStats {
   cpuUsage: number;

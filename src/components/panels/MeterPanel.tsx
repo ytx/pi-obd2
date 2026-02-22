@@ -80,7 +80,7 @@ function MeterPanel({ pid, label, min, max, unit, config, decimals }: MeterPanel
   }, [width, height, dpr, val, min, max, label, unit, activeConfig, bgImage, fontFamily, decimals]);
 
   return (
-    <div ref={containerRef} className="h-full w-full bg-obd-surface rounded-lg overflow-hidden">
+    <div ref={containerRef} className={`h-full w-full rounded-lg overflow-hidden ${currentThemeId ? '' : 'bg-obd-surface'}`}>
       <canvas
         ref={canvasRef}
         style={{ width: `${width}px`, height: `${height}px` }}
