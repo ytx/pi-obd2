@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { useAppStore } from '@/stores/useAppStore';
 import { useOBDStore } from '@/stores/useOBDStore';
-import { OBDConnectionState, StubProfileName } from '@/types';
+import { useThemeStore } from '@/stores/useThemeStore';
+import { OBDConnectionState, StubProfileName, ThemeData } from '@/types';
 import BoardView from '@/components/boards/BoardView';
 
 function DashboardScreen() {
@@ -19,7 +20,10 @@ function DashboardScreen() {
     setCurrentProfile,
   } = useOBDStore();
 
-  // Initialize: load available PIDs, stub mode, profiles, register event listeners
+  const { availableThemes, currentThemeId, setAvailableThemes, applyTheme, clearTheme } =
+    useThemeStore();
+
+  // Initialize: load available PIDs, stub mode, profiles, themes, register event listeners
   useEffect(() => {
     if (!window.obd2API) return;
 
@@ -27,6 +31,7 @@ function DashboardScreen() {
     window.obd2API.obdIsStubMode().then(setStubMode);
     window.obd2API.obdGetState().then((s) => setConnectionState(s as OBDConnectionState));
     window.obd2API.stubGetProfiles().then(setProfiles);
+    window.obd2API.themeList().then(setAvailableThemes);
 
     const removeData = window.obd2API.onOBDData(updateValues);
     const removeConn = window.obd2API.onOBDConnectionChange((s) =>
@@ -37,7 +42,7 @@ function DashboardScreen() {
       removeData();
       removeConn();
     };
-  }, [setAvailablePids, setStubMode, setConnectionState, updateValues, setProfiles]);
+  }, [setAvailablePids, setStubMode, setConnectionState, updateValues, setProfiles, setAvailableThemes]);
 
   const handleConnect = async () => {
     try {
@@ -58,6 +63,17 @@ function DashboardScreen() {
   const handleProfileChange = async (name: string) => {
     await window.obd2API.stubSetProfile(name);
     setCurrentProfile(name as StubProfileName);
+  };
+
+  const handleThemeChange = async (themeId: string) => {
+    if (themeId === '') {
+      clearTheme();
+      return;
+    }
+    const data = await window.obd2API.themeLoad(themeId);
+    if (data) {
+      applyTheme(data as ThemeData);
+    }
   };
 
   const stateColor: Record<string, string> = {
@@ -107,22 +123,42 @@ function DashboardScreen() {
         </div>
       </div>
 
-      {/* Stub profile selector */}
-      {isStubMode && connectionState === 'connected' && profiles.length > 0 && (
-        <div className="flex gap-2 mb-4">
-          {profiles.map((p) => (
-            <button
-              key={p}
-              onClick={() => handleProfileChange(p)}
-              className={`px-3 py-1 rounded text-sm transition-colors ${
-                currentProfile === p
-                  ? 'bg-obd-primary text-obd-dark font-bold'
-                  : 'bg-obd-surface text-obd-dim border border-obd-dim hover:bg-obd-dim/30'
-              }`}
+      {/* Controls bar */}
+      {connectionState === 'connected' && (
+        <div className="flex items-center gap-4 mb-4">
+          {/* Stub profile selector */}
+          {isStubMode && profiles.length > 0 && (
+            <div className="flex gap-2">
+              {profiles.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => handleProfileChange(p)}
+                  className={`px-3 py-1 rounded text-sm transition-colors ${
+                    currentProfile === p
+                      ? 'bg-obd-primary text-obd-dark font-bold'
+                      : 'bg-obd-surface text-obd-dim border border-obd-dim hover:bg-obd-dim/30'
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          )}
+          {/* Theme selector */}
+          {availableThemes.length > 0 && (
+            <select
+              value={currentThemeId ?? ''}
+              onChange={(e) => handleThemeChange(e.target.value)}
+              className="px-3 py-1 rounded text-sm bg-obd-surface text-obd-primary border border-obd-dim"
             >
-              {p}
-            </button>
-          ))}
+              <option value="">Default Theme</option>
+              {availableThemes.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       )}
 

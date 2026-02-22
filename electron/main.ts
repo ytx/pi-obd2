@@ -8,6 +8,7 @@ import { ELM327Source } from './obd/elm327-source';
 import { DataSource } from './obd/data-source';
 import { getAllPidInfos } from './obd/pids';
 import { StubPidConfig, StubProfileName } from './obd/types';
+import { scanThemes, loadTheme } from './themes/theme-loader';
 
 let mainWindow: BrowserWindow | null = null;
 let dataSource: DataSource | null = null;
@@ -185,6 +186,15 @@ function registerIpcHandlers(): void {
       return (dataSource as StubSource).getConfig();
     }
     return null;
+  });
+
+  // --- Theme IPC ---
+  ipcMain.handle('theme-list', () => {
+    return scanThemes();
+  });
+
+  ipcMain.handle('theme-load', (_event, themeId: string) => {
+    return loadTheme(themeId);
   });
 }
 

@@ -117,3 +117,29 @@ export interface Board {
   layoutId: string;
   panels: (string | null)[];  // slot index → panelDef ID
 }
+
+// Theme types (Phase 4)
+export interface ThemeInfo {
+  id: string;
+  apkFile: string;
+  themeZip: string;
+  name: string;
+  screenshotBase64?: string;
+}
+
+export interface ThemeAssets {
+  dialBackground?: string;    // base64 data URL
+  displayBackground?: string; // base64 data URL
+  background?: string;        // base64 data URL
+  fontBase64?: string;        // base64 raw
+}
+
+export interface ThemeProperties {
+  [key: string]: string;
+}
+
+export interface ThemeData {
+  info: ThemeInfo;
+  properties: ThemeProperties;
+  assets: ThemeAssets;
+}

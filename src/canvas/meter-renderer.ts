@@ -10,16 +10,27 @@ export interface MeterRenderParams {
   title: string;
   unit: string;
   config: MeterConfig;
+  backgroundImage?: HTMLImageElement | null;
+  fontFamily?: string;
 }
 
 export function renderMeter(params: MeterRenderParams): void {
-  const { ctx, width, height, value, min, max, title, unit, config } = params;
+  const { ctx, width, height, value, min, max, title, unit, config, backgroundImage, fontFamily } = params;
   const size = Math.min(width, height);
   const cx = width / 2;
   const cy = height / 2;
   const radius = size / 2 - 4;
+  const font = fontFamily ?? 'sans-serif';
 
   ctx.clearRect(0, 0, width, height);
+
+  // Draw background image (480x480 source scaled to panel size)
+  if (backgroundImage) {
+    const bgSize = size;
+    const bx = cx - bgSize / 2;
+    const by = cy - bgSize / 2;
+    ctx.drawImage(backgroundImage, bx, by, bgSize, bgSize);
+  }
 
   // Angle calculation: 6 o'clock (bottom) = Math.PI/2 in standard math
   // startAngle/stopAngle = exclusion from bottom in degrees
@@ -56,7 +67,7 @@ export function renderMeter(params: MeterRenderParams): void {
   const majorCount = config.tickCount;
   const scaleR = radius * config.scaleTextRadius;
   ctx.fillStyle = config.textColor;
-  ctx.font = `${Math.round(size * 0.06 * config.fontScale)}px sans-serif`;
+  ctx.font = `${Math.round(size * 0.06 * config.fontScale)}px ${font}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   for (let i = 0; i <= majorCount; i += 5) {
@@ -91,18 +102,18 @@ export function renderMeter(params: MeterRenderParams): void {
 
   // Draw title
   ctx.fillStyle = config.textColor;
-  ctx.font = `${Math.round(size * 0.07 * config.fontScale)}px sans-serif`;
+  ctx.font = `${Math.round(size * 0.07 * config.fontScale)}px ${font}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(title, cx, cy + radius * config.titleOffset);
 
   // Draw value
   ctx.fillStyle = config.valueColor;
-  ctx.font = `bold ${Math.round(size * 0.12 * config.fontScale)}px sans-serif`;
+  ctx.font = `bold ${Math.round(size * 0.12 * config.fontScale)}px ${font}`;
   ctx.fillText(String(Math.round(clamped)), cx, cy + radius * config.valueOffset);
 
   // Draw unit
   ctx.fillStyle = config.unitColor;
-  ctx.font = `${Math.round(size * 0.06 * config.fontScale)}px sans-serif`;
+  ctx.font = `${Math.round(size * 0.06 * config.fontScale)}px ${font}`;
   ctx.fillText(unit, cx, cy + radius * config.unitOffset);
 }

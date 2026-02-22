@@ -43,6 +43,11 @@ const obd2API = {
   stubSetPidConfig: (pid: string, config: Record<string, unknown>): Promise<void> =>
     ipcRenderer.invoke('stub-set-pid-config', pid, config),
   stubGetConfig: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke('stub-get-config'),
+
+  // Themes
+  themeList: (): Promise<Array<{ id: string; apkFile: string; themeZip: string; name: string; screenshotBase64?: string }>> =>
+    ipcRenderer.invoke('theme-list'),
+  themeLoad: (themeId: string): Promise<unknown> => ipcRenderer.invoke('theme-load', themeId),
 };
 
 contextBridge.exposeInMainWorld('obd2API', obd2API);
