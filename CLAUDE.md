@@ -244,6 +244,12 @@ npm run package       # Electron パッケージング (Linux ARM64)
 - テーマ設定は parser で変換し、各コンポーネントで `currentThemeId ? themeConfig : defaultConfig` で切替
 - BoardView の CSS Grid セルは `key={boardId-layoutId-index}` でボード/レイアウト切替時に DOM を再生成（`key={i}` だと前レイアウトの gridRow/gridColumn スタイルが残るバグ）
 
+## 開発ツール (`scripts/`)
+
+- `scripts/obd2_capture.py` — ELM327 Bluetooth 経由の OBD2 データ取得ツール（Python）
+- Intel MacBook Pro + venv で実行（Raspberry Pi ではなく Mac 上で開発・実行）
+- 詳細は `scripts/README.md` 参照
+
 ## TODO / 未解決事項
 
 ### Torque テーマ座標系の正確な仕様確認
