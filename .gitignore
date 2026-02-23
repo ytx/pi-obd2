@@ -6,4 +6,4 @@ release/
 .DS_Store
 *.log
 electron/git-version.ts
-themes/
+/themes/
