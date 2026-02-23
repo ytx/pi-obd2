@@ -246,8 +246,9 @@ npm run package       # Electron パッケージング (Linux ARM64)
 
 ## 開発ツール (`scripts/`)
 
-- `scripts/obd2_capture.py` — ELM327 Bluetooth 経由の OBD2 データ取得ツール（Python）
-- Intel MacBook Pro + venv で実行（Raspberry Pi ではなく Mac 上で開発・実行）
+- `scripts/obd2_capture.py` — ELM327 Bluetooth SPP 経由の OBD2 データ取得ツール（Python）
+- Raspberry Pi 上で venv を使って実行（Mac では BT SPP 接続に問題あり）
+- `bluetoothctl` でペアリング → `rfcomm bind` で `/dev/rfcomm0` 作成 → `--port /dev/rfcomm0` で接続
 - 詳細は `scripts/README.md` 参照
 
 ## TODO / 未解決事項

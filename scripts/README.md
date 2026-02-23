@@ -4,28 +4,82 @@ ELM327 Bluetooth アダプタ経由で車両の OBD2 データを取得・記録
 
 ## 動作環境
 
-- Intel MacBook Pro
+- Raspberry Pi 4 (Raspberry Pi OS)
 - Python 3.9+
 - Bluetooth SPP 接続の ELM327 アダプタ
 
 ## セットアップ
 
 ```bash
-cd scripts
+cd ~/git/pi-obd2/scripts
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Bluetooth ペアリング
+## Bluetooth ペアリング (Raspberry Pi)
 
-1. ELM327 アダプタを車両の OBD2 ポートに接続
-2. Mac の「システム設定 > Bluetooth」でペアリング（PIN: 通常 `1234` or `0000`）
-3. ペアリング後、`/dev/tty.OBDII-SPPDev` 等のシリアルポートが現れる
+### 1. BlueZ の確認
 
-ポート確認:
 ```bash
-ls /dev/tty.*OBD* /dev/tty.*ELM*
+# Bluetooth サービスが動作していることを確認
+sudo systemctl status bluetooth
+
+# 起動していなければ
+sudo systemctl start bluetooth
+sudo systemctl enable bluetooth
+```
+
+### 2. ELM327 のスキャン・ペアリング
+
+```bash
+# bluetoothctl で対話操作
+bluetoothctl
+
+# スキャン開始
+[bluetooth]# scan on
+
+# ELM327 が見つかったら（例: OBDII, ELM327, Vgate 等の名前）
+# MAC アドレスをメモ（例: AA:BB:CC:DD:EE:FF）
+[bluetooth]# scan off
+
+# ペアリング（PIN: 通常 1234 or 0000）
+[bluetooth]# pair AA:BB:CC:DD:EE:FF
+[bluetooth]# trust AA:BB:CC:DD:EE:FF
+[bluetooth]# exit
+```
+
+### 3. SPP シリアルポートのバインド
+
+```bash
+# rfcomm でシリアルポートを作成
+sudo rfcomm bind 0 AA:BB:CC:DD:EE:FF
+
+# /dev/rfcomm0 が作成される
+ls -l /dev/rfcomm0
+```
+
+> **注意:** `rfcomm` が無い場合は `sudo apt install bluez` で入る。
+> Raspberry Pi OS Bookworm 以降では `rfcomm` が非推奨のため、
+> パッケージに含まれていない場合がある。その場合は以下で対応:
+>
+> ```bash
+> # bluez-tools で代替、または直接ソースからビルド
+> sudo apt install bluez-tools
+> # もしくは python-obd の自動ポート検出を試す（--port 省略）
+> ```
+
+### 4. ポート確認
+
+```bash
+ls -l /dev/rfcomm*
+```
+
+### 5. 権限設定
+
+```bash
+# pi ユーザーを dialout グループに追加（初回のみ、再ログイン要）
+sudo usermod -aG dialout $USER
 ```
 
 ## 使い方
@@ -35,7 +89,7 @@ ls /dev/tty.*OBD* /dev/tty.*ELM*
 車両がサポートする PID の一覧と、車両情報（VIN 等）を表示する。
 
 ```bash
-python obd2_capture.py scan
+python obd2_capture.py scan --port /dev/rfcomm0
 ```
 
 出力内容:
@@ -50,21 +104,20 @@ Ctrl+C で停止。終了時に各 PID の min/max/avg サマリーを表示。
 
 ```bash
 # 全サポート PID を記録
-python obd2_capture.py record
+python obd2_capture.py record --port /dev/rfcomm0
 
 # PID を指定して記録
-python obd2_capture.py record --pids 010C,010D,0105
+python obd2_capture.py record --port /dev/rfcomm0 --pids 010C,010D,0105
 
 # ポーリング間隔を指定（秒）
-python obd2_capture.py record --interval 0.5
+python obd2_capture.py record --port /dev/rfcomm0 --interval 0.5
 ```
 
 ### 共通オプション
 
 ```bash
-# シリアルポートを明示的に指定
-python obd2_capture.py --port /dev/tty.OBDII-SPPDev scan
-python obd2_capture.py --port /dev/tty.OBDII-SPPDev record
+# --port を省略すると python-obd が自動検出を試みる
+python obd2_capture.py scan
 ```
 
 ## 出力ファイル
@@ -73,6 +126,13 @@ python obd2_capture.py --port /dev/tty.OBDII-SPPDev record
 scripts/output/
 ├── supported_pids.csv              # scan で生成: pid, name, description
 └── capture_20260223_143000.csv     # record で生成: timestamp, pid, name, value, unit
+```
+
+## rfcomm の解放
+
+```bash
+# 使用後にポートを解放
+sudo rfcomm release 0
 ```
 
 ## 活用
