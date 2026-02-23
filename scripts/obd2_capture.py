@@ -5,8 +5,8 @@ Usage:
     python obd2_capture.py scan [--port PORT]
     python obd2_capture.py record [--port PORT] [--pids PID1,PID2,...] [--interval SECONDS]
 
-Setup (Intel Mac):
-    cd scripts
+Setup (Raspberry Pi):
+    cd ~/git/pi-obd2/scripts
     python3 -m venv venv
     source venv/bin/activate
     pip install -r requirements.txt
@@ -24,6 +24,24 @@ from pathlib import Path
 import obd
 
 OUTPUT_DIR = Path(__file__).parent / "output"
+
+
+def cmd_pid(cmd) -> str:
+    """Get PID hex string from an OBDCommand (e.g., b"0101" -> "0101")."""
+    return cmd.command.decode("ascii").upper()
+
+
+def extract_value(val) -> tuple:
+    """Extract (numeric_value, unit_str) from a response value.
+
+    Returns (None, None) for non-numeric types (STATUS, tuples, strings, etc.).
+    """
+    if hasattr(val, "magnitude"):
+        return val.magnitude, str(val.units)
+    if isinstance(val, (int, float)):
+        return val, ""
+    return None, None
+
 
 # Mode 09 commands to query for vehicle info
 MODE09_COMMANDS = [
@@ -80,14 +98,12 @@ def cmd_scan(args: argparse.Namespace) -> None:
     )
 
     print(f"\n=== Supported Mode 01 PIDs ({len(mode01)}) ===")
-    print(f"  {'PID':<6} {'Name':<35} {'Unit'}")
+    print(f"  {'PID':<6} {'Name':<35} {'Description'}")
     print(f"  {'---':<6} {'---':<35} {'---'}")
     for cmd in mode01:
-        pid_hex = cmd.command.hex().upper()
-        unit = str(cmd.ecu) if not hasattr(cmd, "unit") else ""
-        # python-OBD stores unit in the decoder, extract from description
+        pid_hex = cmd_pid(cmd)
         desc = cmd.desc or cmd.name
-        print(f"  {pid_hex:<6} {desc:<35} ")
+        print(f"  {pid_hex:<6} {cmd.name:<35} {desc}")
 
     # Save to CSV
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -96,8 +112,7 @@ def cmd_scan(args: argparse.Namespace) -> None:
         writer = csv.writer(f)
         writer.writerow(["pid", "name", "description"])
         for cmd in mode01:
-            pid_hex = cmd.command.hex().upper()
-            writer.writerow([pid_hex, cmd.name, cmd.desc or ""])
+            writer.writerow([cmd_pid(cmd), cmd.name, cmd.desc or ""])
 
     print(f"\nSaved to {csv_path}")
 
@@ -105,17 +120,20 @@ def cmd_scan(args: argparse.Namespace) -> None:
     print(f"\n=== Current Values ===")
     print(f"  {'PID':<6} {'Name':<30} {'Value':<15} {'Unit'}")
     print(f"  {'---':<6} {'---':<30} {'---':<15} {'---'}")
+    numeric_count = 0
     for cmd in mode01:
         resp = conn.query(cmd)
         if resp.is_null():
             continue
-        pid_hex = cmd.command.hex().upper()
-        val = resp.value
-        # pint Quantity has magnitude and units
-        if hasattr(val, "magnitude"):
-            print(f"  {pid_hex:<6} {cmd.name:<30} {val.magnitude:<15.2f} {val.units}")
+        pid_hex = cmd_pid(cmd)
+        num_val, unit = extract_value(resp.value)
+        if num_val is not None:
+            print(f"  {pid_hex:<6} {cmd.name:<30} {num_val:<15.2f} {unit}")
+            numeric_count += 1
         else:
-            print(f"  {pid_hex:<6} {cmd.name:<30} {str(val):<15}")
+            print(f"  {pid_hex:<6} {cmd.name:<30} {'(non-numeric)':<15} {str(resp.value)[:50]}")
+
+    print(f"\n  Numeric PIDs: {numeric_count}/{len(mode01)} (usable for recording)")
 
     conn.close()
 
@@ -155,7 +173,7 @@ def cmd_record(args: argparse.Namespace) -> None:
 
     print(f"\nRecording {len(commands)} PIDs (Ctrl+C to stop):")
     for cmd in commands:
-        print(f"  {cmd.command.hex().upper()} {cmd.name}")
+        print(f"  {cmd_pid(cmd)} {cmd.name}")
 
     # Setup CSV output
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -192,15 +210,11 @@ def cmd_record(args: argparse.Namespace) -> None:
                     continue
 
                 now = datetime.now().isoformat(timespec="milliseconds")
-                pid_hex = cmd.command.hex().upper()
-                val = resp.value
+                pid_hex = cmd_pid(cmd)
+                num_val, unit = extract_value(resp.value)
 
-                if hasattr(val, "magnitude"):
-                    num_val = val.magnitude
-                    unit = str(val.units)
-                else:
-                    num_val = val
-                    unit = ""
+                if num_val is None:
+                    continue  # Skip non-numeric values
 
                 writer.writerow([now, pid_hex, cmd.name, num_val, unit])
                 record_count += 1
@@ -216,14 +230,11 @@ def cmd_record(args: argparse.Namespace) -> None:
                         "count": 0,
                     }
                 s = stats[pid_hex]
-                try:
-                    fval = float(num_val)
-                    s["min"] = min(s["min"], fval)
-                    s["max"] = max(s["max"], fval)
-                    s["sum"] += fval
-                    s["count"] += 1
-                except (TypeError, ValueError):
-                    pass
+                fval = float(num_val)
+                s["min"] = min(s["min"], fval)
+                s["max"] = max(s["max"], fval)
+                s["sum"] += fval
+                s["count"] += 1
 
             # Progress indicator
             elapsed = time.time() - start_time
