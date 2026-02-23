@@ -62,7 +62,7 @@ def cmd_scan(args: argparse.Namespace) -> None:
     # --- Mode 09: Vehicle information ---
     print("\n=== Vehicle Information (Mode 09) ===")
     for cmd_name in MODE09_COMMANDS:
-        cmd = obd.commands.get(cmd_name)
+        cmd = getattr(obd.commands, cmd_name, None)
         if cmd is None:
             continue
         resp = conn.query(cmd)
@@ -129,7 +129,7 @@ def cmd_record(args: argparse.Namespace) -> None:
         pid_names = [p.strip() for p in args.pids.split(",")]
         commands = []
         for name in pid_names:
-            cmd = obd.commands.get(name) if not name.startswith("01") else None
+            cmd = getattr(obd.commands, name, None) if not name.startswith("01") else None
             if cmd is None:
                 # Try by hex PID
                 try:
