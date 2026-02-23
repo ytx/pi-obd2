@@ -12,9 +12,12 @@ import { scanThemes, loadTheme } from './themes/theme-loader';
 import { BluetoothManager } from './bluetooth/bluetooth-manager';
 import { WiFiManager } from './network/wifi-manager';
 
+const USB_MOUNT_POINT = '/mnt/obd2-usb';
+
 let mainWindow: BrowserWindow | null = null;
 const btManager = new BluetoothManager();
 const wifiManager = new WiFiManager();
+let usbMounted = false;
 let dataSource: DataSource | null = null;
 let isStubMode = true; // Default to stub for development
 
@@ -192,13 +195,101 @@ function registerIpcHandlers(): void {
     return null;
   });
 
+  // --- USB IPC ---
+  ipcMain.handle('detect-usb', () => {
+    try {
+      const output = execSync('lsblk -J -o NAME,SIZE,TYPE,MOUNTPOINT,TRAN,RM', { encoding: 'utf-8' });
+      const data = JSON.parse(output);
+      const devices: { device: string; size: string; mountpoint: string | null }[] = [];
+      for (const dev of data.blockdevices) {
+        if (dev.tran === 'usb' && dev.rm) {
+          if (dev.children) {
+            for (const part of dev.children) {
+              if (part.type === 'part') {
+                devices.push({
+                  device: `/dev/${part.name}`,
+                  size: part.size,
+                  mountpoint: part.mountpoint || null,
+                });
+              }
+            }
+          }
+        }
+      }
+      return devices;
+    } catch (err) {
+      console.error('[detect-usb]', err);
+      return [];
+    }
+  });
+
+  ipcMain.handle('mount-usb', (_event, device: string) => {
+    if (!/^\/dev\/sd[a-z]\d+$/.test(device)) {
+      return { success: false, error: 'Invalid device path' };
+    }
+    try {
+      execSync(`sudo mkdir -p ${USB_MOUNT_POINT}`, { stdio: 'pipe' });
+      const uid = process.getuid?.() ?? 1000;
+      const gid = process.getgid?.() ?? 1000;
+      execSync(`sudo mount -t vfat -o uid=${uid},gid=${gid} ${device} ${USB_MOUNT_POINT}`, { stdio: 'pipe' });
+      usbMounted = true;
+      return { success: true, mountpoint: USB_MOUNT_POINT };
+    } catch (err) {
+      console.error('[mount-usb]', err);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle('unmount-usb', () => {
+    try {
+      execSync(`sudo umount ${USB_MOUNT_POINT}`, { stdio: 'pipe' });
+      usbMounted = false;
+      return { success: true };
+    } catch (err) {
+      usbMounted = false;
+      console.error('[unmount-usb]', err);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle('usb-export-config', (_event, configJson: string) => {
+    try {
+      const configPath = path.join(USB_MOUNT_POINT, 'obd2-config.json');
+      fs.writeFileSync(configPath, configJson, 'utf-8');
+      return { success: true };
+    } catch (err) {
+      console.error('[usb-export]', err);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle('usb-import-config', () => {
+    try {
+      const configPath = path.join(USB_MOUNT_POINT, 'obd2-config.json');
+      if (!fs.existsSync(configPath)) {
+        return { success: false, error: 'obd2-config.json not found' };
+      }
+      const data = fs.readFileSync(configPath, 'utf-8');
+      return { success: true, data };
+    } catch (err) {
+      console.error('[usb-import]', err);
+      return { success: false, error: String(err) };
+    }
+  });
+
   // --- Theme IPC ---
+  function getUsbThemeDirs(): string[] {
+    if (!usbMounted) return [];
+    const usbThemes = path.join(USB_MOUNT_POINT, 'themes');
+    return fs.existsSync(usbThemes) ? [usbThemes] : [];
+  }
+
   ipcMain.handle('theme-list', () => {
-    return scanThemes();
+    return scanThemes(getUsbThemeDirs());
   });
 
   ipcMain.handle('theme-load', (_event, themeId: string) => {
-    return loadTheme(themeId);
+    return loadTheme(themeId, getUsbThemeDirs());
   });
 
   // --- Bluetooth IPC ---

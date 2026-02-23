@@ -146,6 +146,19 @@ export interface WiFiNetwork {
   connected: boolean;
 }
 
+// USB types
+export interface UsbDevice {
+  device: string;
+  size: string;
+  mountpoint: string | null;
+}
+
+export interface UsbResult {
+  success: boolean;
+  mountpoint?: string;
+  error?: string;
+}
+
 // Theme types (Phase 4)
 export interface ThemeInfo {
   id: string;

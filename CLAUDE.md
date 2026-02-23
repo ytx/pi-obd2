@@ -27,20 +27,20 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 
 ### Electron メインプロセス (`electron/`)
 
-- `main.ts` - Electron 初期化、IPC ハンドラ、システム操作、自動接続
+- `main.ts` - Electron 初期化、IPC ハンドラ、システム操作、自動接続、USB マウント
 - `preload.ts` - contextBridge によるセキュア IPC
 - `obd/data-source.ts` - DataSource 抽象インターフェース
 - `obd/stub-source.ts` - スタブデータソース（開発用シミュレーター）
 - `obd/elm327-source.ts` - ELM327 データソース（実機用）
 - `obd/pids.ts` - PID 定義テーブル（名前、単位、計算式、min/max）
-- `themes/theme-loader.ts` - テーマディレクトリのスキャン・読込
+- `themes/theme-loader.ts` - テーマディレクトリのスキャン・読込（複数ディレクトリ対応、USB テーマ `usb:` プレフィックス）
 - `bluetooth/bluetooth-manager.ts` - BT スキャン・ペアリング・接続（bluetoothctl ラッパー）
 - `network/wifi-manager.ts` - WiFi スキャン・接続（nmcli ラッパー）
 
 ### React レンダラ (`src/`)
 
 - `components/DashboardScreen.tsx` - メイン画面（フルスクリーンボード + タップゾーンナビ + 接続ドットオーバーレイ）
-- `components/settings/SystemSettingsScreen.tsx` - システム設定（接続・BT・WiFi・システム情報・アクション）
+- `components/settings/SystemSettingsScreen.tsx` - システム設定（接続・BT・WiFi・USB・システム情報・アクション）
 - `components/settings/DisplaySettingsScreen.tsx` - 表示設定（テーマ・ボード編集）
 - `components/settings/DevSettingsScreen.tsx` - 開発設定（スタブシミュレーター）
 - `components/boards/BoardContainer.tsx` - ボード切替コンテナ（スワイプ + キーボード）
@@ -54,6 +54,7 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 - `components/settings/BoardEditSection.tsx` - ボード編集（追加・削除・名前変更・レイアウト変更・パネル割当・詳細設定）
 - `components/settings/BluetoothSection.tsx` - BT 設定（スキャン・ペアリング）
 - `components/settings/WiFiSection.tsx` - WiFi 設定
+- `components/settings/UsbSection.tsx` - USB メモリ（検出・マウント・設定エクスポート/インポート）
 - `components/settings/ThemeSection.tsx` - テーマ選択（スクリーンショット付き）
 - `canvas/meter-renderer.ts` - メーター Canvas 描画（純粋関数）
 - `canvas/graph-renderer.ts` - グラフ Canvas 描画（純粋関数）
@@ -187,6 +188,7 @@ themes/<theme-name>/
 - OBD2 接続（状態、接続/切断、STUB モード表示）
 - Bluetooth（スキャン・ペアリング）
 - WiFi（スキャン・接続）
+- USB Memory（検出・マウント/アンマウント・設定エクスポート/インポート）
 - System（ホスト名、CPU、メモリ、稼働時間）
 - System Actions（Save Config・Reboot・Shutdown）
 
@@ -220,6 +222,39 @@ Zustand `persist` ミドルウェアで以下を永続化:
 4. `bluetoothctl devices` で発見済みデバイス一覧を取得
 
 **注意:** `bluetoothctl` に引数 `scan on` を渡して spawn すると、stdin が閉じられた時点で即終了するため、スキャン時間が確保できない。
+
+### USB メモリ
+
+sonix2 の USB マウントパターンを踏襲:
+- `lsblk -J -o NAME,SIZE,TYPE,MOUNTPOINT,TRAN,RM` で USB パーティション検出（`tran === 'usb'` + `rm` でフィルタ）
+- マウントポイント: `/mnt/obd2-usb`（vfat、uid/gid 付き）
+- デバイスパスバリデーション: `/^\/dev\/sd[a-z]\d+$/`
+
+**USB ファイル構成:**
+```
+/mnt/obd2-usb/
+├── obd2-config.json          # 設定エクスポート/インポート
+└── themes/                   # USB テーマディレクトリ
+    └── my-custom-theme/
+        ├── properties.txt
+        └── ...
+```
+
+**設定エクスポート/インポート:**
+- `obd2-config.json` に `{ version, boards, currentBoardId, screenPadding, currentThemeId }` を保存
+- インポート時は useBoardStore/useThemeStore に直接 setState
+- テーマ ID が変わっていれば `themeLoad()` → `applyTheme()` / `clearTheme()`
+
+**USB テーマ:**
+- `theme-loader.ts` の `scanThemes(extraDirs?)` / `loadTheme(themeId, extraDirs?)` で複数ディレクトリ対応
+- USB テーマの ID は `usb:<name>` プレフィックスで内蔵テーマと区別
+- USB マウント中は `theme-list` / `theme-load` が USB `themes/` も対象に追加
+- USB アンマウント後は USB テーマへの参照が解決不能になる（clearTheme が必要）
+
+**IPC ハンドラ:**
+- `detect-usb` — USB デバイス一覧
+- `mount-usb` / `unmount-usb` — マウント/アンマウント
+- `usb-export-config` / `usb-import-config` — 設定の読み書き
 
 ### CSP (Content Security Policy)
 

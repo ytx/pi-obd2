@@ -1,4 +1,4 @@
-import { SystemStats, OBDPidInfo, OBDValue, ThemeInfo, ThemeData, BTDevice, WiFiNetwork } from './index';
+import { SystemStats, OBDPidInfo, OBDValue, ThemeInfo, ThemeData, BTDevice, WiFiNetwork, UsbDevice, UsbResult } from './index';
 
 declare global {
   const __GIT_COMMIT__: string;
@@ -29,6 +29,13 @@ declare global {
       stubSetProfile: (name: string) => Promise<void>;
       stubSetPidConfig: (pid: string, config: Record<string, unknown>) => Promise<void>;
       stubGetConfig: () => Promise<Record<string, unknown> | null>;
+
+      // USB
+      detectUsb: () => Promise<UsbDevice[]>;
+      mountUsb: (device: string) => Promise<UsbResult>;
+      unmountUsb: () => Promise<UsbResult>;
+      usbExportConfig: (configJson: string) => Promise<UsbResult>;
+      usbImportConfig: () => Promise<{ success: boolean; data?: string; error?: string }>;
 
       // Themes
       themeList: () => Promise<ThemeInfo[]>;

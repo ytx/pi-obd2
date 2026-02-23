@@ -44,6 +44,18 @@ const obd2API = {
     ipcRenderer.invoke('stub-set-pid-config', pid, config),
   stubGetConfig: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke('stub-get-config'),
 
+  // USB
+  detectUsb: (): Promise<Array<{ device: string; size: string; mountpoint: string | null }>> =>
+    ipcRenderer.invoke('detect-usb'),
+  mountUsb: (device: string): Promise<{ success: boolean; mountpoint?: string; error?: string }> =>
+    ipcRenderer.invoke('mount-usb', device),
+  unmountUsb: (): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('unmount-usb'),
+  usbExportConfig: (configJson: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('usb-export-config', configJson),
+  usbImportConfig: (): Promise<{ success: boolean; data?: string; error?: string }> =>
+    ipcRenderer.invoke('usb-import-config'),
+
   // Themes
   themeList: (): Promise<Array<{ id: string; name: string; screenshotBase64?: string }>> =>
     ipcRenderer.invoke('theme-list'),

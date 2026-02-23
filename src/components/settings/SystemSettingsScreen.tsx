@@ -4,6 +4,7 @@ import { useOBDStore } from '@/stores/useOBDStore';
 import { OBDConnectionState } from '@/types';
 import BluetoothSection from '@/components/settings/BluetoothSection';
 import WiFiSection from '@/components/settings/WiFiSection';
+import UsbSection from '@/components/settings/UsbSection';
 
 function SystemSettingsScreen() {
   const { hostname, systemStats, setScreen, setSystemStats } = useAppStore();
@@ -115,6 +116,9 @@ function SystemSettingsScreen() {
 
         {/* WiFi */}
         <WiFiSection />
+
+        {/* USB Memory */}
+        <UsbSection />
 
         {/* System Info */}
         <div className="bg-obd-surface rounded-lg p-4">
