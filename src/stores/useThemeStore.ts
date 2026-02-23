@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { ThemeInfo, ThemeData, MeterConfig, NumericConfig, GraphConfig } from '@/types';
 import { parseTheme } from '@/canvas/theme-parser';
 import { DEFAULT_METER_CONFIG, DEFAULT_NUMERIC_CONFIG, DEFAULT_GRAPH_CONFIG } from '@/config/defaults';
@@ -22,7 +23,9 @@ interface ThemeState {
   clearTheme: () => void;
 }
 
-export const useThemeStore = create<ThemeState>((set) => ({
+export const useThemeStore = create<ThemeState>()(
+  persist(
+    (set) => ({
   availableThemes: [],
   currentThemeId: null,
   currentThemeData: null,
@@ -87,4 +90,12 @@ export const useThemeStore = create<ThemeState>((set) => ({
       backgroundUrl: null,
       fontLoaded: false,
     }),
-}));
+}),
+    {
+      name: 'obd2-theme',
+      partialize: (state) => ({
+        currentThemeId: state.currentThemeId,
+      }),
+    },
+  ),
+);

@@ -34,6 +34,8 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 - `obd/elm327-source.ts` - ELM327 データソース（実機用）
 - `obd/pids.ts` - PID 定義テーブル（名前、単位、計算式、min/max）
 - `themes/theme-loader.ts` - テーマディレクトリのスキャン・読込
+- `bluetooth/bluetooth-manager.ts` - BT スキャン・ペアリング・接続（bluetoothctl ラッパー）
+- `network/wifi-manager.ts` - WiFi スキャン・接続（nmcli ラッパー）
 
 ### React レンダラ (`src/`)
 
@@ -108,7 +110,7 @@ PanelSlot.tsx でフォールバックチェーン: スロットオーバーラ�
 ### OBD2 通信
 
 - Bluetooth SPP のみ（ELM327）
-- BlueZ D-Bus API でスキャン・ペアリング・接続（TODO: 実装）
+- `bluetoothctl` でスキャン・ペアリング・接続（`electron/bluetooth/bluetooth-manager.ts`）
 - SPP rfcomm → serialport でデータ通信
 - 表示中ボードの使用 PID のみポーリング（優先度付き）
 - 起動時自動接続（STUB モードでは即座に接続）
@@ -195,6 +197,30 @@ themes/<theme-name>/
 **開発設定画面（左下タップ）:**
 - Stub Simulator（プロファイル切替、PID ベース値スライダー）
 
+### 設定永続化 (localStorage)
+
+Zustand `persist` ミドルウェアで以下を永続化:
+
+| ストア | storage key | 永続化する状態 | 永続化しない状態 |
+|---|---|---|---|
+| `useBoardStore` | `obd2-boards` | `boards`, `currentBoardId`, `screenPadding` | `layouts`, `panelDefs`（静的デフォルト） |
+| `useThemeStore` | `obd2-theme` | `currentThemeId` | テーマデータ・派生状態（base64 が巨大） |
+| `useOBDStore` | — | なし | 全て（接続状態・ライブデータ） |
+| `useAppStore` | — | なし | 全て（ランタイム情報） |
+
+- テーマは `currentThemeId` のみ保存し、起動時に `App.tsx` で `themeLoad()` → `applyTheme()` でファイルから再ロード
+- `partialize` で保存対象を限定（巨大な base64 データや静的定義を除外）
+
+### Bluetooth スキャン
+
+`bluetooth-manager.ts` で `bluetoothctl` をインタラクティブモードで起動:
+1. `spawn('bluetoothctl', [], { stdio: ['pipe', 'ignore', 'ignore'] })`
+2. stdin に `scan on\n` を送信 → 8秒待機（デバイス発見期間）
+3. `scan off\n` → stdin 閉じ → プロセス終了待ち（最大3秒）
+4. `bluetoothctl devices` で発見済みデバイス一覧を取得
+
+**注意:** `bluetoothctl` に引数 `scan on` を渡して spawn すると、stdin が閉じられた時点で即終了するため、スキャン時間が確保できない。
+
 ### CSP (Content Security Policy)
 
 `index.html` で設定:
@@ -243,6 +269,7 @@ npm run package       # Electron パッケージング (Linux ARM64)
 - Canvas 描画は純粋関数（`renderMeter()`, `renderGraph()`）、コンポーネントから分離
 - テーマ設定は parser で変換し、各コンポーネントで `currentThemeId ? themeConfig : defaultConfig` で切替
 - BoardView の CSS Grid セルは `key={boardId-layoutId-index}` でボード/レイアウト切替時に DOM を再生成（`key={i}` だと前レイアウトの gridRow/gridColumn スタイルが残るバグ）
+- `bluetoothctl` はインタラクティブシェルなので `stdio: 'ignore'` で spawn すると即終了する。stdin を pipe で開き、コマンドを書き込む方式にすること
 
 ## 開発ツール (`scripts/`)
 

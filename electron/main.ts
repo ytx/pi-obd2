@@ -9,8 +9,12 @@ import { DataSource } from './obd/data-source';
 import { getAllPidInfos } from './obd/pids';
 import { StubPidConfig, StubProfileName } from './obd/types';
 import { scanThemes, loadTheme } from './themes/theme-loader';
+import { BluetoothManager } from './bluetooth/bluetooth-manager';
+import { WiFiManager } from './network/wifi-manager';
 
 let mainWindow: BrowserWindow | null = null;
+const btManager = new BluetoothManager();
+const wifiManager = new WiFiManager();
 let dataSource: DataSource | null = null;
 let isStubMode = true; // Default to stub for development
 
@@ -197,57 +201,42 @@ function registerIpcHandlers(): void {
     return loadTheme(themeId);
   });
 
-  // --- Bluetooth IPC (stubs - TODO: BlueZ D-Bus implementation) ---
-  ipcMain.handle('bt-scan', () => {
-    // TODO: Use BlueZ D-Bus to scan for devices
-    return [
-      { address: 'AA:BB:CC:DD:EE:01', name: 'OBD2 ELM327', paired: false, connected: false, rssi: -45 },
-      { address: 'AA:BB:CC:DD:EE:02', name: 'OBDII Scanner', paired: true, connected: false, rssi: -60 },
-    ];
+  // --- Bluetooth IPC ---
+  ipcMain.handle('bt-scan', async () => {
+    try { return await btManager.scan(); } catch { return []; }
   });
 
-  ipcMain.handle('bt-pair', (_event, _address: string) => {
-    // TODO: BlueZ pair
-    return true;
+  ipcMain.handle('bt-pair', async (_event, address: string) => {
+    try { return await btManager.pair(address); } catch { return false; }
   });
 
-  ipcMain.handle('bt-connect', (_event, _address: string) => {
-    // TODO: BlueZ SPP connect
-    return true;
+  ipcMain.handle('bt-connect', async (_event, address: string) => {
+    try { return await btManager.connect(address); } catch { return false; }
   });
 
-  ipcMain.handle('bt-disconnect', (_event, _address: string) => {
-    // TODO: BlueZ disconnect
-    return true;
+  ipcMain.handle('bt-disconnect', async (_event, address: string) => {
+    try { return await btManager.disconnect(address); } catch { return false; }
   });
 
-  ipcMain.handle('bt-get-devices', () => {
-    // TODO: Get paired devices from BlueZ
-    return [];
+  ipcMain.handle('bt-get-devices', async () => {
+    try { return await btManager.getDevices(); } catch { return []; }
   });
 
-  // --- WiFi IPC (stubs - TODO: NetworkManager implementation) ---
-  ipcMain.handle('wifi-scan', () => {
-    // TODO: Use NetworkManager D-Bus to scan
-    return [
-      { ssid: 'HomeNetwork', signal: 85, security: 'WPA2', connected: true },
-      { ssid: 'Guest', signal: 60, security: 'WPA2', connected: false },
-    ];
+  // --- WiFi IPC ---
+  ipcMain.handle('wifi-scan', async () => {
+    try { return await wifiManager.scan(); } catch { return []; }
   });
 
-  ipcMain.handle('wifi-connect', (_event, _ssid: string, _password: string) => {
-    // TODO: NetworkManager connect
-    return true;
+  ipcMain.handle('wifi-connect', async (_event, ssid: string, password: string) => {
+    try { return await wifiManager.connect(ssid, password); } catch { return false; }
   });
 
-  ipcMain.handle('wifi-disconnect', () => {
-    // TODO: NetworkManager disconnect
-    return true;
+  ipcMain.handle('wifi-disconnect', async () => {
+    try { return await wifiManager.disconnect(); } catch { return false; }
   });
 
-  ipcMain.handle('wifi-get-current', () => {
-    // TODO: Get current WiFi SSID
-    return null;
+  ipcMain.handle('wifi-get-current', async () => {
+    try { return await wifiManager.getCurrentSsid(); } catch { return null; }
   });
 }
 

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { Board, BoardSlot, Layout, PanelDef } from '@/types';
 import { DEFAULT_BOARDS, DEFAULT_LAYOUTS, DEFAULT_PANEL_DEFS, DEFAULT_SCREEN_PADDING } from '@/config/defaults';
 
@@ -34,7 +35,9 @@ for (const l of DEFAULT_LAYOUTS) {
   initialLayouts[l.id] = l;
 }
 
-export const useBoardStore = create<BoardState>((set, get) => ({
+export const useBoardStore = create<BoardState>()(
+  persist(
+    (set, get) => ({
   boards: DEFAULT_BOARDS,
   layouts: initialLayouts,
   panelDefs: initialPanelDefs,
@@ -121,4 +124,14 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       }),
     });
   },
-}));
+}),
+    {
+      name: 'obd2-boards',
+      partialize: (state) => ({
+        boards: state.boards,
+        currentBoardId: state.currentBoardId,
+        screenPadding: state.screenPadding,
+      }),
+    },
+  ),
+);

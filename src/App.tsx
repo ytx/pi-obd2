@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useAppStore } from '@/stores/useAppStore';
+import { useThemeStore } from '@/stores/useThemeStore';
 import DashboardScreen from '@/components/DashboardScreen';
 import SystemSettingsScreen from '@/components/settings/SystemSettingsScreen';
 import DisplaySettingsScreen from '@/components/settings/DisplaySettingsScreen';
@@ -13,6 +14,20 @@ function App() {
       window.obd2API.getHostname().then(setHostname);
     }
   }, [setHostname]);
+
+  // Restore persisted theme on startup
+  useEffect(() => {
+    const themeId = useThemeStore.getState().currentThemeId;
+    if (themeId && window.obd2API) {
+      window.obd2API.themeLoad(themeId).then((data: unknown) => {
+        if (data) {
+          useThemeStore.getState().applyTheme(data as import('@/types').ThemeData);
+        }
+      }).catch((e: unknown) => {
+        console.warn('Failed to restore theme:', e);
+      });
+    }
+  }, []);
 
   return (
     <div className="h-screen w-screen">
