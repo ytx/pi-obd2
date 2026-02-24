@@ -28,6 +28,7 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 ### Electron メインプロセス (`electron/`)
 
 - `main.ts` - Electron 初期化、IPC ハンドラ、システム操作、自動接続、USB マウント
+- `logger.ts` - リングバッファ方式ログモジュール（max 500 エントリ、USB 書出し対応）
 - `preload.ts` - contextBridge によるセキュア IPC
 - `obd/data-source.ts` - DataSource 抽象インターフェース
 - `obd/stub-source.ts` - スタブデータソース（開発用シミュレーター）
@@ -63,6 +64,7 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 - `canvas/mono-text.ts` - Canvas 等幅数字描画ヘルパー
 - `stores/useAppStore.ts` - アプリ状態（画面、ホスト名、システム情報）
 - `stores/useOBDStore.ts` - OBD2 データ状態（接続、値、PID 情報）
+- `stores/hydration.ts` - `waitForHydration(store)` ユーティリティ（Zustand persist 非同期ハイドレーション待ち）
 - `stores/useBoardStore.ts` - ボード・レイアウト・パネル定義管理
 - `stores/useThemeStore.ts` - テーマ状態（設定、アセット URL、フォント）
 - `config/defaults.ts` - デフォルト設定（メーター・グラフ・数値・レイアウト・ボード）
@@ -112,9 +114,11 @@ PanelSlot.tsx でフォールバックチェーン: スロットオーバーラ�
 
 - Bluetooth SPP のみ（ELM327）
 - `bluetoothctl` でスキャン・ペアリング・接続（`electron/bluetooth/bluetooth-manager.ts`）
-- SPP rfcomm → serialport でデータ通信
+- SPP rfcomm → fs.openSync/readSync/writeSync でデータ通信
 - 表示中ボードの使用 PID のみポーリング（優先度付き）
-- 起動時自動接続（STUB モードでは即座に接続）
+- 起動時自動接続（既に接続済みならスキップ）
+- `sudo rfcomm bind` 後に `sudo chown` で `/dev/rfcomm0` の所有権を実行ユーザーに変更（root 所有だと EACCES）
+- システム設定画面から「Stub」ボタンで手動スタブ切替可能（ELM327 デバイス不在時）
 
 ### Torque テーマ
 
@@ -185,12 +189,12 @@ themes/<theme-name>/
 - タップゾーンナビ（角100x100px）: 右上→システム設定、右下→表示設定、左下→開発設定
 
 **システム設定画面（右上タップ）:**
-- OBD2 接続（状態、接続/切断、STUB モード表示）
+- OBD2 接続（状態、Connect/Stub/Disconnect、STUB モード表示、ELM327 アドレス表示）
 - Bluetooth（スキャン・ペアリング）
 - WiFi（スキャン・接続）
 - USB Memory（検出・マウント/アンマウント・設定エクスポート/インポート）
 - System（ホスト名、CPU、メモリ、稼働時間）
-- System Actions（Save Config・Reboot・Shutdown）
+- System Actions（Save Config・Save Logs（USB マウント時）・Reboot・Shutdown）
 
 **表示設定画面（右下タップ）:**
 - Theme（スクリーンショット付きテーマ選択）
@@ -207,11 +211,18 @@ Zustand `persist` ミドルウェアで以下を永続化:
 |---|---|---|---|
 | `useBoardStore` | `obd2-boards` | `boards`, `currentBoardId`, `screenPadding` | `layouts`, `panelDefs`（静的デフォルト） |
 | `useThemeStore` | `obd2-theme` | `currentThemeId` | テーマデータ・派生状態（base64 が巨大） |
-| `useOBDStore` | — | なし | 全て（接続状態・ライブデータ） |
+| `useOBDStore` | `obd2-bt` | `obdBtAddress` | 接続状態・ライブデータ |
 | `useAppStore` | — | なし | 全て（ランタイム情報） |
 
 - テーマは `currentThemeId` のみ保存し、起動時に `App.tsx` で `themeLoad()` → `applyTheme()` でファイルから再ロード
 - `partialize` で保存対象を限定（巨大な base64 データや静的定義を除外）
+
+**Zustand persist ハイドレーション:**
+- `persist` ミドルウェアは非同期で localStorage から復元する
+- コンポーネントの `useEffect` が復元前に実行されると初期値（null）を読んでしまう
+- `waitForHydration(store)` で `hasHydrated()` / `onFinishHydration()` を使い、復元完了後に `getState()` で読む
+- `DashboardScreen`: ハイドレーション後に `obdBtAddress` を取得して自動接続
+- `App.tsx`: ハイドレーション後に `currentThemeId` を取得してテーマ復元
 
 ### Bluetooth スキャン
 
@@ -255,6 +266,11 @@ sonix2 の USB マウントパターンを踏襲:
 - `detect-usb` — USB デバイス一覧
 - `mount-usb` / `unmount-usb` — マウント/アンマウント
 - `usb-export-config` / `usb-import-config` — 設定の読み書き
+- `obd-connect-stub` — 強制スタブモード接続（既存接続を切断して切替）
+- `get-logs` — ログエントリ一覧取得
+- `save-logs-usb` — USB マウントポイントにログファイル書出し
+- `log-settings` — renderer からの設定情報をログに記録
+- `is-usb-mounted` — USB マウント状態取得
 
 ### CSP (Content Security Policy)
 
@@ -267,7 +283,7 @@ sonix2 の USB マウントパターンを踏襲:
 - 基準: 1024 x 600、対象: 640x480 〜 1920x1080
 - HDMI + USB タッチパネル
 - タッチ操作: フリックでボード切替、設定画面操作
-- ロギング機能: なし（リアルタイム表示のみ）
+- ロギング: `electron/logger.ts` リングバッファ（max 500）、USB メモリに書出し可能
 
 ## セットアップ (Ansible)
 
@@ -305,6 +321,8 @@ npm run package       # Electron パッケージング (Linux ARM64)
 - テーマ設定は parser で変換し、各コンポーネントで `currentThemeId ? themeConfig : defaultConfig` で切替
 - BoardView の CSS Grid セルは `key={boardId-layoutId-index}` でボード/レイアウト切替時に DOM を再生成（`key={i}` だと前レイアウトの gridRow/gridColumn スタイルが残るバグ）
 - `bluetoothctl` はインタラクティブシェルなので `stdio: 'ignore'` で spawn すると即終了する。stdin を pipe で開き、コマンドを書き込む方式にすること
+- `/boot/firmware/config/save.sh` や `rfcomm bind`、`mount` など root 権限が必要な操作は `sudo` 付きで `execSync` する
+- `console.log/error` は使わず `electron/logger.ts` の `logger.info/warn/error(tag, message)` を使用する
 
 ## 開発ツール (`scripts/`)
 

@@ -13,7 +13,8 @@ declare global {
       saveConfig: () => Promise<boolean>;
 
       // OBD2 connection
-      obdConnect: () => Promise<void>;
+      obdConnect: (btAddress?: string) => Promise<void>;
+      obdConnectStub: () => Promise<void>;
       obdDisconnect: () => Promise<void>;
       obdGetState: () => Promise<string>;
       obdGetAvailablePids: () => Promise<OBDPidInfo[]>;
@@ -43,9 +44,9 @@ declare global {
 
       // Bluetooth
       btScan: () => Promise<BTDevice[]>;
-      btPair: (address: string) => Promise<boolean>;
-      btConnect: (address: string) => Promise<boolean>;
-      btDisconnect: (address: string) => Promise<boolean>;
+      btPair: (address: string) => Promise<{ success: boolean; error?: string }>;
+      btConnect: (address: string) => Promise<{ success: boolean; error?: string }>;
+      btDisconnect: (address: string) => Promise<{ success: boolean; error?: string }>;
       btGetDevices: () => Promise<BTDevice[]>;
 
       // WiFi
@@ -53,6 +54,12 @@ declare global {
       wifiConnect: (ssid: string, password: string) => Promise<boolean>;
       wifiDisconnect: () => Promise<boolean>;
       wifiGetCurrent: () => Promise<string | null>;
+
+      // Logs
+      getLogs: () => Promise<Array<{ timestamp: string; level: string; tag: string; message: string }>>;
+      saveLogsUsb: () => Promise<{ success: boolean; filePath?: string; error?: string }>;
+      logSettings: (settings: Record<string, unknown>) => Promise<void>;
+      isUsbMounted: () => Promise<boolean>;
     };
   }
 }

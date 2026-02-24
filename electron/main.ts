@@ -11,6 +11,7 @@ import { StubPidConfig, StubProfileName } from './obd/types';
 import { scanThemes, loadTheme } from './themes/theme-loader';
 import { BluetoothManager } from './bluetooth/bluetooth-manager';
 import { WiFiManager } from './network/wifi-manager';
+import { logger } from './logger';
 
 const USB_MOUNT_POINT = '/mnt/obd2-usb';
 
@@ -114,34 +115,63 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('system-shutdown', () => {
     try {
+      logger.info('system', 'Shutdown requested');
       execSync('sudo shutdown -h now');
     } catch (e) {
-      console.error('Shutdown failed:', e);
+      logger.error('system', `Shutdown failed: ${e}`);
     }
   });
 
   ipcMain.handle('system-reboot', () => {
     try {
+      logger.info('system', 'Reboot requested');
       execSync('sudo reboot');
     } catch (e) {
-      console.error('Reboot failed:', e);
+      logger.error('system', `Reboot failed: ${e}`);
     }
   });
 
   ipcMain.handle('save-config', () => {
     try {
-      execSync('/boot/firmware/config/save.sh --all');
+      logger.info('config', 'Saving config...');
+      execSync('sudo /boot/firmware/config/save.sh --all');
+      logger.info('config', 'Config saved');
       return true;
     } catch (e) {
-      console.error('Save config failed:', e);
+      logger.error('config', `Save config failed: ${e}`);
       return false;
     }
   });
 
   // --- OBD2 IPC ---
-  ipcMain.handle('obd-connect', async () => {
+  ipcMain.handle('obd-connect', async (_event, btAddress?: string) => {
+    logger.info('obd', `Connect requested (btAddress=${btAddress ?? 'none'}, stubMode=${isStubMode})`);
+    // btAddress provided → switch to ELM327 mode if currently stub or no ELM327 instance
+    if (btAddress) {
+      if (isStubMode || !(dataSource instanceof ELM327Source)) {
+        isStubMode = false;
+        if (dataSource) {
+          dataSource.dispose();
+          dataSource = null;
+        }
+      }
+    }
+    const ds = getDataSource();
+    await ds.connect(btAddress ?? undefined);
+    logger.info('obd', `Connected (mode=${isStubMode ? 'stub' : 'elm327'})`);
+  });
+
+  ipcMain.handle('obd-connect-stub', async () => {
+    logger.info('obd', 'Stub connect requested');
+    if (dataSource) {
+      await dataSource.disconnect();
+      dataSource.dispose();
+      dataSource = null;
+    }
+    isStubMode = true;
     const ds = getDataSource();
     await ds.connect();
+    logger.info('obd', 'Connected (mode=stub)');
   });
 
   ipcMain.handle('obd-disconnect', async () => {
@@ -219,7 +249,7 @@ function registerIpcHandlers(): void {
       }
       return devices;
     } catch (err) {
-      console.error('[detect-usb]', err);
+      logger.error('usb', `detect-usb: ${err}`);
       return [];
     }
   });
@@ -236,7 +266,7 @@ function registerIpcHandlers(): void {
       usbMounted = true;
       return { success: true, mountpoint: USB_MOUNT_POINT };
     } catch (err) {
-      console.error('[mount-usb]', err);
+      logger.error('usb', `mount-usb: ${err}`);
       return { success: false, error: String(err) };
     }
   });
@@ -248,7 +278,7 @@ function registerIpcHandlers(): void {
       return { success: true };
     } catch (err) {
       usbMounted = false;
-      console.error('[unmount-usb]', err);
+      logger.error('usb', `unmount-usb: ${err}`);
       return { success: false, error: String(err) };
     }
   });
@@ -259,7 +289,7 @@ function registerIpcHandlers(): void {
       fs.writeFileSync(configPath, configJson, 'utf-8');
       return { success: true };
     } catch (err) {
-      console.error('[usb-export]', err);
+      logger.error('usb', `usb-export: ${err}`);
       return { success: false, error: String(err) };
     }
   });
@@ -273,7 +303,7 @@ function registerIpcHandlers(): void {
       const data = fs.readFileSync(configPath, 'utf-8');
       return { success: true, data };
     } catch (err) {
-      console.error('[usb-import]', err);
+      logger.error('usb', `usb-import: ${err}`);
       return { success: false, error: String(err) };
     }
   });
@@ -297,9 +327,9 @@ function registerIpcHandlers(): void {
       try {
         execSync(`sudo umount ${USB_MOUNT_POINT}`, { stdio: 'pipe' });
         usbMounted = false;
-        console.log('[auto-mount] Auto-unmounted USB after theme load');
+        logger.info('auto-mount', 'Auto-unmounted USB after theme load');
       } catch (err) {
-        console.error('[auto-mount] Auto-unmount failed:', err);
+        logger.error('auto-mount', `Auto-unmount failed: ${err}`);
       }
     }
     return data;
@@ -311,15 +341,15 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('bt-pair', async (_event, address: string) => {
-    try { return await btManager.pair(address); } catch { return false; }
+    try { return await btManager.pair(address); } catch (e) { return { success: false, error: String(e) }; }
   });
 
   ipcMain.handle('bt-connect', async (_event, address: string) => {
-    try { return await btManager.connect(address); } catch { return false; }
+    try { return await btManager.connect(address); } catch (e) { return { success: false, error: String(e) }; }
   });
 
   ipcMain.handle('bt-disconnect', async (_event, address: string) => {
-    try { return await btManager.disconnect(address); } catch { return false; }
+    try { return await btManager.disconnect(address); } catch (e) { return { success: false, error: String(e) }; }
   });
 
   ipcMain.handle('bt-get-devices', async () => {
@@ -342,6 +372,33 @@ function registerIpcHandlers(): void {
   ipcMain.handle('wifi-get-current', async () => {
     try { return await wifiManager.getCurrentSsid(); } catch { return null; }
   });
+
+  // --- Logger IPC ---
+  ipcMain.handle('get-logs', () => {
+    return logger.getLogs();
+  });
+
+  ipcMain.handle('save-logs-usb', () => {
+    if (!usbMounted) return { success: false, error: 'USB not mounted' };
+    try {
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      const filePath = path.join(USB_MOUNT_POINT, `obd2-logs-${ts}.txt`);
+      logger.saveLogs(filePath);
+      logger.info('logs', `Saved to ${filePath}`);
+      return { success: true, filePath };
+    } catch (err) {
+      logger.error('logs', `Save failed: ${err}`);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle('log-settings', (_event, settings: Record<string, unknown>) => {
+    logger.info('settings', JSON.stringify(settings));
+  });
+
+  ipcMain.handle('is-usb-mounted', () => {
+    return usbMounted;
+  });
 }
 
 /** Auto-mount USB if a device is present (for theme/config restoration after reboot) */
@@ -351,7 +408,7 @@ function autoMountUsb(): void {
     execSync(`mountpoint -q ${USB_MOUNT_POINT}`, { stdio: 'pipe' });
     usbMounted = true;
     usbAutoMounted = true;
-    console.log('[auto-mount] Already mounted');
+    logger.info('auto-mount', 'Already mounted');
     return;
   } catch {
     // Not mounted — try to detect and mount
@@ -372,17 +429,17 @@ function autoMountUsb(): void {
               execSync(`sudo mount -t vfat -o uid=${uid},gid=${gid} ${device} ${USB_MOUNT_POINT}`, { stdio: 'pipe' });
               usbMounted = true;
               usbAutoMounted = true;
-              console.log(`[auto-mount] Mounted ${device} to ${USB_MOUNT_POINT}`);
+              logger.info('auto-mount', `Mounted ${device} to ${USB_MOUNT_POINT}`);
               return;
             } catch (err) {
-              console.error(`[auto-mount] Failed to mount ${device}:`, err);
+              logger.error('auto-mount', `Failed to mount ${device}: ${err}`);
             }
           }
         }
       }
     }
   } catch (err) {
-    console.error('[auto-mount] USB detection failed:', err);
+    logger.error('auto-mount', `USB detection failed: ${err}`);
   }
 }
 
@@ -391,7 +448,9 @@ app.whenReady().then(() => {
   if (process.env.OBD2_MODE === 'real') {
     isStubMode = false;
   }
+  logger.info('app', `Starting (mode=${isStubMode ? 'stub' : 'real'}, packaged=${app.isPackaged})`);
   autoMountUsb();
+  logger.info('app', `USB mounted=${usbMounted}`);
   registerIpcHandlers();
   createWindow();
 });

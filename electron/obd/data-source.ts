@@ -1,7 +1,7 @@
 import { OBDValue, OBDConnectionState } from './types';
 
 export interface DataSource {
-  connect(): Promise<void>;
+  connect(btAddress?: string): Promise<void>;
   disconnect(): Promise<void>;
   getState(): OBDConnectionState;
   requestPids(pids: string[]): void;

@@ -4,6 +4,7 @@ import { useOBDStore } from '@/stores/useOBDStore';
 import { useBoardStore } from '@/stores/useBoardStore';
 import { useThemeStore } from '@/stores/useThemeStore';
 import { OBDConnectionState } from '@/types';
+import { waitForHydration } from '@/stores/hydration';
 import BoardContainer from '@/components/boards/BoardContainer';
 
 function DashboardScreen() {
@@ -21,7 +22,7 @@ function DashboardScreen() {
   const screenPadding = useBoardStore((s) => s.screenPadding);
 
   // Initialize: load available PIDs, stub mode, profiles, themes, register event listeners
-  // Then auto-connect
+  // Then auto-connect after hydration
   useEffect(() => {
     if (!window.obd2API) return;
 
@@ -36,8 +37,20 @@ function DashboardScreen() {
       setConnectionState(s as OBDConnectionState),
     );
 
-    // Auto-connect
-    window.obd2API.obdConnect().catch((e) => console.warn('Auto-connect failed:', e));
+    // Wait for OBDStore hydration then auto-connect (only if disconnected)
+    waitForHydration(useOBDStore).then(async () => {
+      const { obdBtAddress } = useOBDStore.getState();
+      window.obd2API.logSettings({
+        obdBtAddress,
+        currentThemeId: useThemeStore.getState().currentThemeId,
+      });
+      const currentState = await window.obd2API.obdGetState();
+      if (currentState === 'disconnected' || currentState === 'error') {
+        window.obd2API.obdConnect(obdBtAddress ?? undefined).catch((e) =>
+          console.warn('Auto-connect failed:', e),
+        );
+      }
+    });
 
     return () => {
       removeData();

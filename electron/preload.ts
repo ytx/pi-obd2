@@ -17,7 +17,8 @@ const obd2API = {
   saveConfig: (): Promise<boolean> => ipcRenderer.invoke('save-config'),
 
   // OBD2 connection
-  obdConnect: (): Promise<void> => ipcRenderer.invoke('obd-connect'),
+  obdConnect: (btAddress?: string): Promise<void> => ipcRenderer.invoke('obd-connect', btAddress),
+  obdConnectStub: (): Promise<void> => ipcRenderer.invoke('obd-connect-stub'),
   obdDisconnect: (): Promise<void> => ipcRenderer.invoke('obd-disconnect'),
   obdGetState: (): Promise<string> => ipcRenderer.invoke('obd-get-state'),
   obdGetAvailablePids: (): Promise<Array<{ id: string; name: string; unit: string; min: number; max: number }>> =>
@@ -64,9 +65,9 @@ const obd2API = {
   // Bluetooth
   btScan: (): Promise<Array<{ address: string; name: string; paired: boolean; connected: boolean; rssi?: number }>> =>
     ipcRenderer.invoke('bt-scan'),
-  btPair: (address: string): Promise<boolean> => ipcRenderer.invoke('bt-pair', address),
-  btConnect: (address: string): Promise<boolean> => ipcRenderer.invoke('bt-connect', address),
-  btDisconnect: (address: string): Promise<boolean> => ipcRenderer.invoke('bt-disconnect', address),
+  btPair: (address: string): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('bt-pair', address),
+  btConnect: (address: string): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('bt-connect', address),
+  btDisconnect: (address: string): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('bt-disconnect', address),
   btGetDevices: (): Promise<Array<{ address: string; name: string; paired: boolean; connected: boolean; rssi?: number }>> =>
     ipcRenderer.invoke('bt-get-devices'),
 
@@ -77,6 +78,15 @@ const obd2API = {
     ipcRenderer.invoke('wifi-connect', ssid, password),
   wifiDisconnect: (): Promise<boolean> => ipcRenderer.invoke('wifi-disconnect'),
   wifiGetCurrent: (): Promise<string | null> => ipcRenderer.invoke('wifi-get-current'),
+
+  // Logs
+  getLogs: (): Promise<Array<{ timestamp: string; level: string; tag: string; message: string }>> =>
+    ipcRenderer.invoke('get-logs'),
+  saveLogsUsb: (): Promise<{ success: boolean; filePath?: string; error?: string }> =>
+    ipcRenderer.invoke('save-logs-usb'),
+  logSettings: (settings: Record<string, unknown>): Promise<void> =>
+    ipcRenderer.invoke('log-settings', settings),
+  isUsbMounted: (): Promise<boolean> => ipcRenderer.invoke('is-usb-mounted'),
 };
 
 contextBridge.exposeInMainWorld('obd2API', obd2API);

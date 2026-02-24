@@ -10,9 +10,13 @@ interface BTDevice {
 
 function exec(cmd: string, args: string[], timeoutMs = 10000): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(cmd, args, { timeout: timeoutMs }, (err, stdout) => {
-      if (err) reject(err);
-      else resolve(stdout);
+    execFile(cmd, args, { timeout: timeoutMs }, (err, stdout, stderr) => {
+      if (err) {
+        const detail = stderr?.trim() || stdout?.trim() || err.message;
+        reject(new Error(detail));
+      } else {
+        resolve(stdout);
+      }
     });
   });
 }
@@ -24,6 +28,9 @@ export class BluetoothManager {
   async ensureAgent(): Promise<void> {
     if (this.agentReady) return;
     try {
+      // Unblock and power on (overlay FS resets rfkill state on each boot)
+      try { await exec('rfkill', ['unblock', 'bluetooth'], 3000); } catch { /* ignore */ }
+      try { await exec('bluetoothctl', ['power', 'on'], 3000); } catch { /* ignore */ }
       await exec('bluetoothctl', ['agent', 'NoInputNoOutput']);
       await exec('bluetoothctl', ['default-agent']);
       this.agentReady = true;
@@ -32,7 +39,7 @@ export class BluetoothManager {
     }
   }
 
-  async scan(durationMs = 8000): Promise<BTDevice[]> {
+  async scan(durationMs = 30000): Promise<BTDevice[]> {
     if (this.scanning) return this.getDevices();
     this.scanning = true;
     try {
@@ -104,36 +111,84 @@ export class BluetoothManager {
     }
   }
 
-  async pair(address: string): Promise<boolean> {
+  async pair(address: string, pin = '1234'): Promise<{ success: boolean; error?: string }> {
     try {
       await this.ensureAgent();
-      await exec('bluetoothctl', ['pair', address], 15000);
-      // Trust the device so it auto-connects in the future
-      try { await exec('bluetoothctl', ['trust', address], 5000); } catch { /* ignore */ }
-      return true;
-    } catch (e) {
-      console.error('BT pair failed:', e);
-      return false;
+      // Use interactive bluetoothctl to handle PIN prompt
+      const result = await new Promise<{ success: boolean; error?: string }>((resolve) => {
+        let output = '';
+        const proc = spawn('bluetoothctl', [], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+        proc.stdout!.on('data', (data: Buffer) => {
+          const chunk = data.toString();
+          output += chunk;
+          // Respond to PIN request
+          if (/PIN code/i.test(chunk) || /Enter passkey/i.test(chunk)) {
+            proc.stdin!.write(`${pin}\n`);
+          }
+          // Confirm yes/no prompt
+          if (/Confirm passkey/i.test(chunk) || /\(yes\/no\)/i.test(chunk)) {
+            proc.stdin!.write('yes\n');
+          }
+        });
+        proc.stderr!.on('data', (data: Buffer) => { output += data.toString(); });
+
+        const timeout = setTimeout(() => {
+          proc.kill();
+          resolve({ success: false, error: 'Pair timeout' });
+        }, 20000);
+
+        proc.on('exit', () => {
+          clearTimeout(timeout);
+          if (/Pairing successful/i.test(output)) {
+            resolve({ success: true });
+          } else {
+            const errLine = output.split('\n').find((l) => /Failed|Error/i.test(l))?.trim();
+            resolve({ success: false, error: errLine || 'Pair failed' });
+          }
+        });
+
+        // Disconnect first (ELM327 may auto-connect before pairing)
+        proc.stdin!.write(`disconnect ${address}\n`);
+        setTimeout(() => {
+          proc.stdin!.write(`pair ${address}\n`);
+        }, 1000);
+        // Wait for pairing to settle, then trust and quit
+        setTimeout(() => {
+          proc.stdin!.write(`trust ${address}\n`);
+          setTimeout(() => {
+            proc.stdin!.write('quit\n');
+          }, 2000);
+        }, 16000);
+      });
+      return result;
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('BT pair failed:', msg);
+      return { success: false, error: msg };
     }
   }
 
-  async connect(address: string): Promise<boolean> {
+  async connect(address: string): Promise<{ success: boolean; error?: string }> {
     try {
       await exec('bluetoothctl', ['connect', address], 10000);
-      return true;
-    } catch (e) {
-      console.error('BT connect failed:', e);
-      return false;
+      return { success: true };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('BT connect failed:', msg);
+      return { success: false, error: msg };
     }
   }
 
-  async disconnect(address: string): Promise<boolean> {
+  async disconnect(address: string): Promise<{ success: boolean; error?: string }> {
     try {
       await exec('bluetoothctl', ['disconnect', address], 5000);
-      return true;
-    } catch (e) {
-      console.error('BT disconnect failed:', e);
-      return false;
+      return { success: true };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('BT disconnect failed:', msg);
+      return { success: false, error: msg };
     }
   }
 }
