@@ -18,6 +18,7 @@ let mainWindow: BrowserWindow | null = null;
 const btManager = new BluetoothManager();
 const wifiManager = new WiFiManager();
 let usbMounted = false;
+let usbAutoMounted = false;  // true when mounted by autoMountUsb (will auto-unmount after theme-load)
 let dataSource: DataSource | null = null;
 let isStubMode = true; // Default to stub for development
 
@@ -289,7 +290,19 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('theme-load', (_event, themeId: string) => {
-    return loadTheme(themeId, getUsbThemeDirs());
+    const data = loadTheme(themeId, getUsbThemeDirs());
+    // Auto-unmount USB after startup theme restoration (data is fully in memory)
+    if (usbAutoMounted) {
+      usbAutoMounted = false;
+      try {
+        execSync(`sudo umount ${USB_MOUNT_POINT}`, { stdio: 'pipe' });
+        usbMounted = false;
+        console.log('[auto-mount] Auto-unmounted USB after theme load');
+      } catch (err) {
+        console.error('[auto-mount] Auto-unmount failed:', err);
+      }
+    }
+    return data;
   });
 
   // --- Bluetooth IPC ---
@@ -331,11 +344,54 @@ function registerIpcHandlers(): void {
   });
 }
 
+/** Auto-mount USB if a device is present (for theme/config restoration after reboot) */
+function autoMountUsb(): void {
+  // Check if already mounted
+  try {
+    execSync(`mountpoint -q ${USB_MOUNT_POINT}`, { stdio: 'pipe' });
+    usbMounted = true;
+    usbAutoMounted = true;
+    console.log('[auto-mount] Already mounted');
+    return;
+  } catch {
+    // Not mounted — try to detect and mount
+  }
+
+  try {
+    const output = execSync('lsblk -J -o NAME,SIZE,TYPE,MOUNTPOINT,TRAN,RM', { encoding: 'utf-8' });
+    const data = JSON.parse(output);
+    for (const dev of data.blockdevices) {
+      if (dev.tran === 'usb' && dev.rm && dev.children) {
+        for (const part of dev.children) {
+          if (part.type === 'part' && !part.mountpoint) {
+            const device = `/dev/${part.name}`;
+            try {
+              execSync(`sudo mkdir -p ${USB_MOUNT_POINT}`, { stdio: 'pipe' });
+              const uid = process.getuid?.() ?? 1000;
+              const gid = process.getgid?.() ?? 1000;
+              execSync(`sudo mount -t vfat -o uid=${uid},gid=${gid} ${device} ${USB_MOUNT_POINT}`, { stdio: 'pipe' });
+              usbMounted = true;
+              usbAutoMounted = true;
+              console.log(`[auto-mount] Mounted ${device} to ${USB_MOUNT_POINT}`);
+              return;
+            } catch (err) {
+              console.error(`[auto-mount] Failed to mount ${device}:`, err);
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[auto-mount] USB detection failed:', err);
+  }
+}
+
 app.whenReady().then(() => {
   // Check environment variable for mode
   if (process.env.OBD2_MODE === 'real') {
     isStubMode = false;
   }
+  autoMountUsb();
   registerIpcHandlers();
   createWindow();
 });
