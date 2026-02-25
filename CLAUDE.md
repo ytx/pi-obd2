@@ -37,14 +37,14 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 - `themes/theme-loader.ts` - テーマディレクトリのスキャン・読込（複数ディレクトリ対応、USB テーマ `usb:` プレフィックス）
 - `bluetooth/bluetooth-manager.ts` - BT スキャン・ペアリング・接続（bluetoothctl ラッパー）
 - `network/wifi-manager.ts` - WiFi スキャン・接続（nmcli ラッパー）
-- `gpio/gpio-manager.ts` - GPIO 監視（onoff ラッパー、edge 検出、デバウンス 50ms、非対応環境ではスタブ）
+- `gpio/gpio-manager.ts` - GPIO 監視（gpiomon/gpioget ラッパー、edge 検出、デバウンス 50ms、非対応環境ではスタブ）
 
 ### React レンダラ (`src/`)
 
 - `components/DashboardScreen.tsx` - メイン画面（フルスクリーンボード + タップゾーンナビ + 接続ドットオーバーレイ）
 - `components/settings/SystemSettingsScreen.tsx` - システム設定（接続・BT・WiFi・USB・システム情報・アクション）
 - `components/settings/DisplaySettingsScreen.tsx` - 表示設定（テーマ・ボード編集）
-- `components/settings/DevSettingsScreen.tsx` - 開発設定（スタブシミュレーター）
+- `components/settings/DevSettingsScreen.tsx` - 開発設定（スタブシミュレーター、ログビューア）
 - `components/boards/BoardContainer.tsx` - ボード切替コンテナ（スワイプ + キーボード）
 - `components/boards/BoardView.tsx` - CSS Grid ボードビュー
 - `components/boards/useSwipe.ts` - タッチスワイプ検出フック
@@ -58,10 +58,11 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 - `components/settings/WiFiSection.tsx` - WiFi 設定
 - `components/settings/UsbSection.tsx` - USB メモリ（検出・マウント・設定エクスポート/インポート）
 - `components/settings/GpioSection.tsx` - GPIO 設定（イルミ・リバース ピン/テーマ/ボード選択）
+- `components/settings/LogSection.tsx` - ログビューア（フィルター、自動スクロール、2秒ポーリング）
 - `components/settings/ThemeSection.tsx` - テーマ選択（スクリーンショット付き）
 - `canvas/meter-renderer.ts` - メーター Canvas 描画（純粋関数）
 - `canvas/graph-renderer.ts` - グラフ Canvas 描画（純粋関数）
-- `canvas/time-buffer.ts` - 時系列循環バッファ（maxSize=300）
+- `canvas/time-buffer.ts` - 時系列循環バッファ（maxSize=300、PID 別共有バッファ）
 - `canvas/theme-parser.ts` - Torque properties → MeterConfig/NumericConfig/GraphConfig 変換
 - `canvas/mono-text.ts` - Canvas 等幅数字描画ヘルパー
 - `stores/useAppStore.ts` - アプリ状態（画面、ホスト名、システム情報）
@@ -157,7 +158,7 @@ themes/<theme-name>/
 **テーマ適用範囲:**
 - メーター: 背景画像、角度、目盛り、針、テキスト色・位置、フォント
 - 数値パネル: 背景画像、テキスト色、フォント
-- グラフ: 線色・塗り色（`graphLineColour` → `displayTextValueColour` → デフォルト）、テキスト色
+- グラフ: 背景画像（`display_background.png`）、線色・塗り色（`graphLineColour` → `displayTextValueColour` → デフォルト）、テキスト色
 - ダッシュボード: 全体背景画像
 
 **Canvas レイヤー合成順:**
@@ -212,6 +213,7 @@ themes/<theme-name>/
 
 **開発設定画面（左下タップ）:**
 - Stub Simulator（プロファイル切替、PID ベース値スライダー）
+- Logs（リングバッファのログ表示、フィルター、自動スクロール、2秒ポーリング）
 
 ### 設定永続化 (localStorage)
 
@@ -293,9 +295,26 @@ sonix2 の USB マウントパターンを踏襲:
 - **イルミ（スモールライト）:** ON → 指定テーマに切替、OFF → 元テーマに復帰
 - **リバース（バックギア）:** ON → 指定ボードに切替、OFF → 元ボードに復帰
 
-`onoff` パッケージで edge 検出（デバウンス 50ms）。`Gpio.accessible` で判定し、開発環境（GPIO なし）では警告ログのみでスタブ動作。
+`gpiomon` (libgpiod v2) で edge 検出（デバウンス 50ms）、`gpioget` で現在値読み取り。`gpiochip0` を使用。`gpiomon` が存在しない環境（開発 Mac 等）では警告ログのみでスタブ動作。
+
+**注意:** `onoff` パッケージ（sysfs ベース）はカーネル 6.12 で `EINVAL` エラーが発生するため不使用。
 
 設定画面でピン番号（GPIO 4〜27）・連動先テーマ/ボードを選択可能、`useGpioStore` で永続化。
+
+### OBD データフローとグラフ履歴
+
+```
+DataSource (main) → obd-data IPC → useOBDStore.updateValues()
+                                      ├→ currentValues[pid] 更新（最新値）
+                                      └→ getSharedBuffer(pid).push()（時系列蓄積）
+                                           ↓
+                                    GraphPanel は buffer.getWindow() で読み取りのみ
+```
+
+- `TimeBuffer` は PID ごとにモジュールスコープの `Map` で保持（`getSharedBuffer(pid)`）
+- ボード切替で GraphPanel がアンマウントされてもバッファは消えない
+- 全 PID のデータが常にバッファに蓄積されるため、非表示ボードのグラフも履歴を保持
+- ボードに戻ったとき、不在期間のデータも含めてグラフが即座に再描画される
 
 ### CSP (Content Security Policy)
 
@@ -333,6 +352,11 @@ npm run dev           # Vite 開発サーバー
 npm run electron:dev  # Electron + Vite 同時起動（開発）
 npm run build         # プロダクションビルド
 npm run package       # Electron パッケージング (Linux ARM64)
+```
+
+**ウィンドウサイズ指定:** `--window-size=W,H` で開発時のウィンドウサイズを変更可能（デフォルト: 1024x600）
+```bash
+npm run electron -- --window-size=1024,576
 ```
 
 **注意:** `electron/` 配下の変更は Vite HMR では反映されない。`npm run electron:dev` の再起動が必要。

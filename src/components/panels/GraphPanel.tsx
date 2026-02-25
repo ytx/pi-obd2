@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { GraphConfig } from '@/types';
 import { useOBDStore } from '@/stores/useOBDStore';
 import { useThemeStore } from '@/stores/useThemeStore';
 import { renderGraph } from '@/canvas/graph-renderer';
-import { TimeBuffer } from '@/canvas/time-buffer';
+import { getSharedBuffer } from '@/canvas/time-buffer';
 import { useCanvasSize } from './useCanvasSize';
 
 interface GraphPanelProps {
@@ -18,7 +18,7 @@ interface GraphPanelProps {
 function GraphPanel({ pid, label, min, max, unit, config }: GraphPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const bufferRef = useRef(new TimeBuffer(300));
+  const buffer = useMemo(() => getSharedBuffer(pid), [pid]);
   const { width, height, dpr } = useCanvasSize(containerRef);
   const val = useOBDStore((s) => s.currentValues[pid]);
   const currentThemeId = useThemeStore((s) => s.currentThemeId);
@@ -44,14 +44,7 @@ function GraphPanel({ pid, label, min, max, unit, config }: GraphPanelProps) {
     ? { ...themeGraphConfig, timeWindowMs: config.timeWindowMs }
     : config;
 
-  // Push new values into buffer
-  useEffect(() => {
-    if (val) {
-      bufferRef.current.push(val.value, val.timestamp);
-    }
-  }, [val]);
-
-  // Render on value change
+  // Render on value change (buffer is fed by useOBDStore.updateValues)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || width === 0 || height === 0) return;
@@ -62,7 +55,7 @@ function GraphPanel({ pid, label, min, max, unit, config }: GraphPanelProps) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const points = bufferRef.current.getWindow(activeConfig.timeWindowMs);
+    const points = buffer.getWindow(activeConfig.timeWindowMs);
 
     ctx.save();
     ctx.scale(dpr, dpr);
@@ -79,7 +72,7 @@ function GraphPanel({ pid, label, min, max, unit, config }: GraphPanelProps) {
       backgroundImage: bgImage,
     });
     ctx.restore();
-  }, [width, height, dpr, val, min, max, label, unit, activeConfig, bgImage]);
+  }, [width, height, dpr, val, min, max, label, unit, activeConfig, bgImage, buffer]);
 
   return (
     <div ref={containerRef} className={`h-full w-full rounded-lg overflow-hidden ${currentThemeId ? '' : 'bg-obd-surface'}`}>

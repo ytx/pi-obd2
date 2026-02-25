@@ -74,12 +74,24 @@ function getDataSource(): DataSource {
   return dataSource;
 }
 
+function parseWindowSize(): { width: number; height: number } {
+  const arg = process.argv.find((a) => a.startsWith('--window-size='));
+  if (arg) {
+    const parts = arg.split('=')[1].split(',').map(Number);
+    if (parts.length === 2 && parts[0] > 0 && parts[1] > 0) {
+      return { width: parts[0], height: parts[1] };
+    }
+  }
+  return { width: 1024, height: 600 };
+}
+
 function createWindow(): void {
   const isPackaged = app.isPackaged;
+  const { width, height } = parseWindowSize();
 
   mainWindow = new BrowserWindow({
-    width: 1024,
-    height: 600,
+    width,
+    height,
     kiosk: isPackaged,
     fullscreen: isPackaged,
     frame: !isPackaged,
@@ -138,10 +150,10 @@ function registerIpcHandlers(): void {
       logger.info('config', 'Saving config...');
       execSync('sudo /boot/firmware/config/save.sh --all');
       logger.info('config', 'Config saved');
-      return true;
+      return { success: true };
     } catch (e) {
       logger.error('config', `Save config failed: ${e}`);
-      return false;
+      return { success: false, error: String(e) };
     }
   });
 

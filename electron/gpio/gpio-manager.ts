@@ -1,14 +1,7 @@
+import { spawn, execSync, ChildProcess } from 'child_process';
 import { logger } from '../logger';
 
-// Dynamic import — onoff may not be available on non-Linux (dev Mac etc.)
-let GpioClass: typeof import('onoff').Gpio | null = null;
-try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const onoff = require('onoff');
-  GpioClass = onoff.Gpio;
-} catch {
-  // onoff not available
-}
+const GPIO_CHIP = 'gpiochip0';
 
 export interface GpioChangeEvent {
   pin: number;
@@ -17,57 +10,81 @@ export interface GpioChangeEvent {
 
 type GpioChangeCallback = (event: GpioChangeEvent) => void;
 
+function hasGpiomon(): boolean {
+  try {
+    execSync('which gpiomon', { stdio: 'pipe' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export class GpioManager {
-  private gpios: Map<number, InstanceType<typeof import('onoff').Gpio>> = new Map();
+  private process: ChildProcess | null = null;
   private callbacks: GpioChangeCallback[] = [];
   private accessible: boolean;
+  private watchedPins: number[] = [];
 
   constructor() {
-    this.accessible = GpioClass?.accessible ?? false;
+    this.accessible = hasGpiomon();
     if (!this.accessible) {
-      logger.warn('gpio', 'GPIO not accessible (dev environment or missing /sys/class/gpio)');
+      logger.warn('gpio', 'gpiomon not found — GPIO disabled');
     }
   }
 
   setup(pins: number[]): void {
-    // Dispose existing watches
-    this.disposeAll();
+    this.killProcess();
+    this.watchedPins = pins;
 
-    if (!this.accessible || !GpioClass) {
-      logger.info('gpio', `Stub mode — setup(${pins.join(', ')}) ignored`);
+    if (!this.accessible || pins.length === 0) {
+      logger.info('gpio', `setup(${pins.join(', ')}) — ${this.accessible ? 'no pins' : 'stub mode'}`);
       return;
     }
 
-    for (const pin of pins) {
-      try {
-        const gpio = new GpioClass(pin, 'in', 'both', { debounceTimeout: 50 });
-        gpio.watch((err, value) => {
-          if (err) {
-            logger.error('gpio', `Pin ${pin} watch error: ${err.message}`);
-            return;
-          }
-          logger.info('gpio', `Pin ${pin} changed to ${value}`);
-          const event: GpioChangeEvent = { pin, value };
-          for (const cb of this.callbacks) {
-            cb(event);
-          }
-        });
-        this.gpios.set(pin, gpio);
-        logger.info('gpio', `Watching pin ${pin}`);
-      } catch (err) {
-        logger.error('gpio', `Failed to setup pin ${pin}: ${err}`);
+    // gpiomon -c gpiochip0 -e both --debounce-period 50ms <offset> [<offset>...]
+    const args = ['-c', GPIO_CHIP, '-e', 'both', '--debounce-period', '50ms', ...pins.map(String)];
+    logger.info('gpio', `Starting: gpiomon ${args.join(' ')}`);
+
+    const proc = spawn('gpiomon', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    this.process = proc;
+
+    proc.stdout?.on('data', (chunk: Buffer) => {
+      const lines = chunk.toString().split('\n');
+      for (const line of lines) {
+        // gpiomon v2 output format: "<timestamp>	<edge>	<chip> <offset>"
+        // e.g. "1234567890.123456789	rising	gpiochip0 17"
+        // or   "1234567890.123456789	falling	gpiochip0 17"
+        const match = line.match(/\t(rising|falling)\t\S+\s+(\d+)/);
+        if (!match) continue;
+        const value = match[1] === 'rising' ? 1 : 0;
+        const pin = parseInt(match[2], 10);
+        logger.info('gpio', `Pin ${pin} ${match[1]} (value=${value})`);
+        const event: GpioChangeEvent = { pin, value };
+        for (const cb of this.callbacks) {
+          cb(event);
+        }
       }
-    }
+    });
+
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      logger.error('gpio', `gpiomon stderr: ${chunk.toString().trim()}`);
+    });
+
+    proc.on('exit', (code) => {
+      if (this.process === proc) {
+        logger.warn('gpio', `gpiomon exited with code ${code}`);
+        this.process = null;
+      }
+    });
   }
 
   read(pin: number): number {
-    if (!this.accessible || !GpioClass) return 0;
-    const gpio = this.gpios.get(pin);
-    if (!gpio) return 0;
+    if (!this.accessible) return 0;
     try {
-      return gpio.readSync();
+      const output = execSync(`gpioget -c ${GPIO_CHIP} ${pin}`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+      return parseInt(output.trim(), 10) || 0;
     } catch (err) {
-      logger.error('gpio', `Failed to read pin ${pin}: ${err}`);
+      logger.error('gpio', `gpioget pin ${pin} failed: ${err}`);
       return 0;
     }
   }
@@ -79,19 +96,16 @@ export class GpioManager {
     };
   }
 
-  private disposeAll(): void {
-    for (const [pin, gpio] of this.gpios) {
-      try {
-        gpio.unexport();
-      } catch (err) {
-        logger.error('gpio', `Failed to unexport pin ${pin}: ${err}`);
-      }
+  private killProcess(): void {
+    if (this.process) {
+      this.process.kill();
+      this.process = null;
     }
-    this.gpios.clear();
   }
 
   dispose(): void {
-    this.disposeAll();
+    this.killProcess();
     this.callbacks = [];
+    this.watchedPins = [];
   }
 }

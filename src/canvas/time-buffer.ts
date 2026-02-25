@@ -3,6 +3,18 @@ export interface TimePoint {
   timestamp: number;
 }
 
+/** PID ごとの永続バッファ（コンポーネントのアンマウントで消えない） */
+const sharedBuffers = new Map<string, TimeBuffer>();
+
+export function getSharedBuffer(pid: string, maxSize = 300): TimeBuffer {
+  let buf = sharedBuffers.get(pid);
+  if (!buf) {
+    buf = new TimeBuffer(maxSize);
+    sharedBuffers.set(pid, buf);
+  }
+  return buf;
+}
+
 export class TimeBuffer {
   private buffer: TimePoint[] = [];
   private maxSize: number;

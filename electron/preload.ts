@@ -14,7 +14,7 @@ const obd2API = {
   getSystemStats: (): Promise<SystemStats> => ipcRenderer.invoke('get-system-stats'),
   systemShutdown: (): Promise<void> => ipcRenderer.invoke('system-shutdown'),
   systemReboot: (): Promise<void> => ipcRenderer.invoke('system-reboot'),
-  saveConfig: (): Promise<boolean> => ipcRenderer.invoke('save-config'),
+  saveConfig: (): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('save-config'),
 
   // OBD2 connection
   obdConnect: (btAddress?: string): Promise<void> => ipcRenderer.invoke('obd-connect', btAddress),

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAppStore } from '@/stores/useAppStore';
 import { useOBDStore } from '@/stores/useOBDStore';
 import { StubProfileName } from '@/types';
+import LogSection from '@/components/settings/LogSection';
 
 function DevSettingsScreen() {
   const { setScreen } = useAppStore();
@@ -107,6 +108,9 @@ function DevSettingsScreen() {
             </div>
           </div>
         )}
+
+        {/* Logs */}
+        <LogSection />
       </div>
     </div>
   );

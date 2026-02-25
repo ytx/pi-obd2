@@ -84,12 +84,12 @@ function SystemSettingsScreen() {
     if (configSaveStatus) return; // prevent double-click
     try {
       setConfigSaveStatus('Saving...');
-      const ok = await window.obd2API.saveConfig();
-      setConfigSaveStatus(ok ? 'Saved!' : 'Failed');
+      const result = await window.obd2API.saveConfig();
+      setConfigSaveStatus(result.success ? 'Saved!' : `Failed: ${result.error}`);
     } catch (e) {
       setConfigSaveStatus(`Error: ${e}`);
     }
-    setTimeout(() => setConfigSaveStatus(null), 3000);
+    setTimeout(() => setConfigSaveStatus(null), 5000);
   };
 
   const handleSaveLogs = async () => {

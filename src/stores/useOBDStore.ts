@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { OBDConnectionState, OBDValue, OBDPidInfo, StubProfileName } from '@/types';
+import { getSharedBuffer } from '@/canvas/time-buffer';
 
 interface OBDState {
   connectionState: OBDConnectionState;
@@ -40,6 +41,8 @@ export const useOBDStore = create<OBDState>()(
           const newValues = { ...state.currentValues };
           for (const v of values) {
             newValues[v.pid] = v;
+            // Push to shared TimeBuffer so graph history accumulates even when not displayed
+            getSharedBuffer(v.pid).push(v.value, v.timestamp);
           }
           return { currentValues: newValues };
         }),

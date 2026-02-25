@@ -10,7 +10,7 @@ declare global {
       getSystemStats: () => Promise<SystemStats>;
       systemShutdown: () => Promise<void>;
       systemReboot: () => Promise<void>;
-      saveConfig: () => Promise<boolean>;
+      saveConfig: () => Promise<{ success: boolean; error?: string }>;
 
       // OBD2 connection
       obdConnect: (btAddress?: string) => Promise<void>;
