@@ -22,11 +22,13 @@ function MeterPanel({ pid, label, min, max, unit, config, decimals }: MeterPanel
   const val = useOBDStore((s) => s.currentValues[pid]);
 
   const dialBackgroundUrl = useThemeStore((s) => s.dialBackgroundUrl);
+  const needleUrl = useThemeStore((s) => s.needleUrl);
   const themeMeterConfig = useThemeStore((s) => s.themeMeterConfig);
   const currentThemeId = useThemeStore((s) => s.currentThemeId);
   const fontLoaded = useThemeStore((s) => s.fontLoaded);
 
   const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
+  const [needleImage, setNeedleImage] = useState<HTMLImageElement | null>(null);
 
   // Load dial background image
   useEffect(() => {
@@ -35,16 +37,22 @@ function MeterPanel({ pid, label, min, max, unit, config, decimals }: MeterPanel
       return;
     }
     const img = new Image();
-    img.onload = () => {
-      console.log('[MeterPanel] dial_background loaded:', img.naturalWidth, 'x', img.naturalHeight);
-      setBgImage(img);
-    };
-    img.onerror = (e) => {
-      console.error('[MeterPanel] dial_background load failed:', e);
-      setBgImage(null);
-    };
+    img.onload = () => setBgImage(img);
+    img.onerror = () => setBgImage(null);
     img.src = dialBackgroundUrl;
   }, [dialBackgroundUrl]);
+
+  // Load needle image
+  useEffect(() => {
+    if (!needleUrl) {
+      setNeedleImage(null);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => setNeedleImage(img);
+    img.onerror = () => setNeedleImage(null);
+    img.src = needleUrl;
+  }, [needleUrl]);
 
   // Use theme config if a theme is active, otherwise use prop config
   const activeConfig = currentThemeId ? themeMeterConfig : config;
@@ -73,11 +81,12 @@ function MeterPanel({ pid, label, min, max, unit, config, decimals }: MeterPanel
       unit,
       config: activeConfig,
       backgroundImage: bgImage,
+      needleImage,
       fontFamily,
       decimals,
     });
     ctx.restore();
-  }, [width, height, dpr, val, min, max, label, unit, activeConfig, bgImage, fontFamily, decimals]);
+  }, [width, height, dpr, val, min, max, label, unit, activeConfig, bgImage, needleImage, fontFamily, decimals]);
 
   return (
     <div ref={containerRef} className={`h-full w-full rounded-lg overflow-hidden ${currentThemeId ? '' : 'bg-obd-surface'}`}>

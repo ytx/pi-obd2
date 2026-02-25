@@ -16,6 +16,7 @@ interface ThemeState {
   dialBackgroundUrl: string | null;
   displayBackgroundUrl: string | null;
   backgroundUrl: string | null;
+  needleUrl: string | null;
   fontLoaded: boolean;
 
   setAvailableThemes: (themes: ThemeInfo[]) => void;
@@ -35,6 +36,7 @@ export const useThemeStore = create<ThemeState>()(
   dialBackgroundUrl: null,
   displayBackgroundUrl: null,
   backgroundUrl: null,
+  needleUrl: null,
   fontLoaded: false,
 
   setAvailableThemes: (availableThemes) => set({ availableThemes }),
@@ -60,6 +62,7 @@ export const useThemeStore = create<ThemeState>()(
       dialBackgroundUrl: data.assets.dialBackground ?? null,
       displayBackgroundUrl: data.assets.displayBackground ?? null,
       backgroundUrl: data.assets.background ?? null,
+      needleUrl: data.assets.needle ?? null,
       fontLoaded: false,
     });
 
@@ -88,6 +91,7 @@ export const useThemeStore = create<ThemeState>()(
       dialBackgroundUrl: null,
       displayBackgroundUrl: null,
       backgroundUrl: null,
+      needleUrl: null,
       fontLoaded: false,
     }),
 }),

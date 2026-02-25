@@ -37,6 +37,7 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 - `themes/theme-loader.ts` - テーマディレクトリのスキャン・読込（複数ディレクトリ対応、USB テーマ `usb:` プレフィックス）
 - `bluetooth/bluetooth-manager.ts` - BT スキャン・ペアリング・接続（bluetoothctl ラッパー）
 - `network/wifi-manager.ts` - WiFi スキャン・接続（nmcli ラッパー）
+- `gpio/gpio-manager.ts` - GPIO 監視（onoff ラッパー、edge 検出、デバウンス 50ms、非対応環境ではスタブ）
 
 ### React レンダラ (`src/`)
 
@@ -56,6 +57,7 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 - `components/settings/BluetoothSection.tsx` - BT 設定（スキャン・ペアリング）
 - `components/settings/WiFiSection.tsx` - WiFi 設定
 - `components/settings/UsbSection.tsx` - USB メモリ（検出・マウント・設定エクスポート/インポート）
+- `components/settings/GpioSection.tsx` - GPIO 設定（イルミ・リバース ピン/テーマ/ボード選択）
 - `components/settings/ThemeSection.tsx` - テーマ選択（スクリーンショット付き）
 - `canvas/meter-renderer.ts` - メーター Canvas 描画（純粋関数）
 - `canvas/graph-renderer.ts` - グラフ Canvas 描画（純粋関数）
@@ -67,6 +69,7 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 - `stores/hydration.ts` - `waitForHydration(store)` ユーティリティ（Zustand persist 非同期ハイドレーション待ち）
 - `stores/useBoardStore.ts` - ボード・レイアウト・パネル定義管理
 - `stores/useThemeStore.ts` - テーマ状態（設定、アセット URL、フォント）
+- `stores/useGpioStore.ts` - GPIO 状態（ピン設定、イルミ/リバース連動設定）
 - `config/defaults.ts` - デフォルト設定（メーター・グラフ・数値・レイアウト・ボード）
 - `types/index.ts` - 全型定義
 
@@ -129,6 +132,7 @@ PanelSlot.tsx でフォールバックチェーン: スロットオーバーラ�
 themes/<theme-name>/
 ├── properties.txt           # Java properties 形式 (key=value, # コメント)
 ├── dial_background.png      # 480x480 RGBA メーター背景
+├── needle.png               # 480x480 RGBA 針画像 (12時方向、オプション)
 ├── display_background.png   # 480x480 RGBA 数値表示背景
 ├── background.jpg           # ダッシュボード全体背景 (任意サイズ)
 ├── font.ttf                 # カスタムフォント (オプション)
@@ -160,8 +164,13 @@ themes/<theme-name>/
 1. `dial_background.png` (480x480 をパネルサイズにスケーリング)
 2. 目盛り線 (テーマ背景がある場合はスキップ — 背景画像に含まれるため)
 3. スケール数値 (min〜max, textRadius に沿って配置 — 常に表示)
-4. テキスト (タイトル、値、単位 - オフセット付き)
-5. 針 (colour, length, sizeRatio で描画)
+4. 針 (`needle.png` がある場合は画像を回転描画、なければ三角形で描画)
+5. テキスト (タイトル、値、単位 - オフセット付き)
+
+**針画像 (needle.png):**
+- 480x480 RGBA、12時方向（上向き）に針を描画した画像
+- 回転中心 = 画像中心（メーターの中心に合わせてスケーリング・回転）
+- needle.png がない場合は従来の三角形 + 中心ドットで描画
 
 **角度システム:**
 - 基準点 = 6時方向 (真下, 180°)
@@ -193,6 +202,7 @@ themes/<theme-name>/
 - Bluetooth（スキャン・ペアリング）
 - WiFi（スキャン・接続）
 - USB Memory（検出・マウント/アンマウント・設定エクスポート/インポート）
+- GPIO（イルミ: ピン・テーマ選択・状態表示、リバース: ピン・ボード選択・状態表示）
 - System（ホスト名、CPU、メモリ、稼働時間）
 - System Actions（Save Config・Save Logs（USB マウント時）・Reboot・Shutdown）
 
@@ -212,6 +222,7 @@ Zustand `persist` ミドルウェアで以下を永続化:
 | `useBoardStore` | `obd2-boards` | `boards`, `currentBoardId`, `screenPadding` | `layouts`, `panelDefs`（静的デフォルト） |
 | `useThemeStore` | `obd2-theme` | `currentThemeId` | テーマデータ・派生状態（base64 が巨大） |
 | `useOBDStore` | `obd2-bt` | `obdBtAddress` | 接続状態・ライブデータ |
+| `useGpioStore` | `obd2-gpio` | `illuminationPin`, `reversePin`, `illuminationThemeId`, `reverseBoardId` | `illuminationActive`, `reverseActive`（ランタイム） |
 | `useAppStore` | — | なし | 全て（ランタイム情報） |
 
 - テーマは `currentThemeId` のみ保存し、起動時に `App.tsx` で `themeLoad()` → `applyTheme()` でファイルから再ロード
@@ -271,6 +282,20 @@ sonix2 の USB マウントパターンを踏襲:
 - `save-logs-usb` — USB マウントポイントにログファイル書出し
 - `log-settings` — renderer からの設定情報をログに記録
 - `is-usb-mounted` — USB マウント状態取得
+- `gpio-setup(pins)` — GPIO ピン監視開始
+- `gpio-read(pin)` — GPIO ピン現在値取得
+- `gpio-change` イベント（main → renderer）— GPIO 変化通知
+
+### GPIO 連動
+
+車両信号（フォトカプラ経由 12V→3.3V）を GPIO で読み取り、表示を自動切替:
+
+- **イルミ（スモールライト）:** ON → 指定テーマに切替、OFF → 元テーマに復帰
+- **リバース（バックギア）:** ON → 指定ボードに切替、OFF → 元ボードに復帰
+
+`onoff` パッケージで edge 検出（デバウンス 50ms）。`Gpio.accessible` で判定し、開発環境（GPIO なし）では警告ログのみでスタブ動作。
+
+設定画面でピン番号（GPIO 4〜27）・連動先テーマ/ボードを選択可能、`useGpioStore` で永続化。
 
 ### CSP (Content Security Policy)
 

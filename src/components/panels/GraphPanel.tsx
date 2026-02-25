@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { GraphConfig } from '@/types';
 import { useOBDStore } from '@/stores/useOBDStore';
 import { useThemeStore } from '@/stores/useThemeStore';
@@ -23,6 +23,21 @@ function GraphPanel({ pid, label, min, max, unit, config }: GraphPanelProps) {
   const val = useOBDStore((s) => s.currentValues[pid]);
   const currentThemeId = useThemeStore((s) => s.currentThemeId);
   const themeGraphConfig = useThemeStore((s) => s.themeGraphConfig);
+  const displayBackgroundUrl = useThemeStore((s) => s.displayBackgroundUrl);
+
+  const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
+
+  // Load display background image
+  useEffect(() => {
+    if (!displayBackgroundUrl) {
+      setBgImage(null);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => setBgImage(img);
+    img.onerror = () => setBgImage(null);
+    img.src = displayBackgroundUrl;
+  }, [displayBackgroundUrl]);
 
   // Use theme config if active, but preserve per-slot overrides (timeWindowMs)
   const activeConfig = currentThemeId
@@ -61,9 +76,10 @@ function GraphPanel({ pid, label, min, max, unit, config }: GraphPanelProps) {
       title: label,
       unit,
       config: activeConfig,
+      backgroundImage: bgImage,
     });
     ctx.restore();
-  }, [width, height, dpr, val, min, max, label, unit, activeConfig]);
+  }, [width, height, dpr, val, min, max, label, unit, activeConfig, bgImage]);
 
   return (
     <div ref={containerRef} className={`h-full w-full rounded-lg overflow-hidden ${currentThemeId ? '' : 'bg-obd-surface'}`}>

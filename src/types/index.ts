@@ -159,6 +159,12 @@ export interface UsbResult {
   error?: string;
 }
 
+// GPIO types
+export interface GpioChangeEvent {
+  pin: number;
+  value: number;
+}
+
 // Theme types (Phase 4)
 export interface ThemeInfo {
   id: string;
@@ -170,6 +176,7 @@ export interface ThemeAssets {
   dialBackground?: string;    // base64 data URL
   displayBackground?: string; // base64 data URL
   background?: string;        // base64 data URL
+  needle?: string;            // base64 data URL (480x480, needle pointing 12 o'clock)
   fontBase64?: string;        // base64 raw
 }
 

@@ -79,6 +79,15 @@ const obd2API = {
   wifiDisconnect: (): Promise<boolean> => ipcRenderer.invoke('wifi-disconnect'),
   wifiGetCurrent: (): Promise<string | null> => ipcRenderer.invoke('wifi-get-current'),
 
+  // GPIO
+  gpioSetup: (pins: number[]): Promise<void> => ipcRenderer.invoke('gpio-setup', pins),
+  gpioRead: (pin: number): Promise<number> => ipcRenderer.invoke('gpio-read', pin),
+  onGpioChange: (callback: (event: { pin: number; value: number }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: { pin: number; value: number }) => callback(data);
+    ipcRenderer.on('gpio-change', listener);
+    return () => { ipcRenderer.removeListener('gpio-change', listener); };
+  },
+
   // Logs
   getLogs: (): Promise<Array<{ timestamp: string; level: string; tag: string; message: string }>> =>
     ipcRenderer.invoke('get-logs'),

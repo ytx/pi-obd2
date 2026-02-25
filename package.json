@@ -25,6 +25,7 @@
   "license": "MIT",
   "dependencies": {
     "electron-store": "^8.1.0",
+    "onoff": "^6.0.3",
     "zustand": "^4.4.7"
   },
   "devDependencies": {

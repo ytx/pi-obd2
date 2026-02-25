@@ -11,6 +11,7 @@ import { StubPidConfig, StubProfileName } from './obd/types';
 import { scanThemes, loadTheme } from './themes/theme-loader';
 import { BluetoothManager } from './bluetooth/bluetooth-manager';
 import { WiFiManager } from './network/wifi-manager';
+import { GpioManager } from './gpio/gpio-manager';
 import { logger } from './logger';
 
 const USB_MOUNT_POINT = '/mnt/obd2-usb';
@@ -18,6 +19,7 @@ const USB_MOUNT_POINT = '/mnt/obd2-usb';
 let mainWindow: BrowserWindow | null = null;
 const btManager = new BluetoothManager();
 const wifiManager = new WiFiManager();
+const gpioManager = new GpioManager();
 let usbMounted = false;
 let usbAutoMounted = false;  // true when mounted by autoMountUsb (will auto-unmount after theme-load)
 let dataSource: DataSource | null = null;
@@ -399,6 +401,15 @@ function registerIpcHandlers(): void {
   ipcMain.handle('is-usb-mounted', () => {
     return usbMounted;
   });
+
+  // --- GPIO IPC ---
+  ipcMain.handle('gpio-setup', (_event, pins: number[]) => {
+    gpioManager.setup(pins);
+  });
+
+  ipcMain.handle('gpio-read', (_event, pin: number) => {
+    return gpioManager.read(pin);
+  });
 }
 
 /** Auto-mount USB if a device is present (for theme/config restoration after reboot) */
@@ -452,6 +463,10 @@ app.whenReady().then(() => {
   autoMountUsb();
   logger.info('app', `USB mounted=${usbMounted}`);
   registerIpcHandlers();
+  // Forward GPIO changes to renderer
+  gpioManager.onChange((event) => {
+    mainWindow?.webContents.send('gpio-change', event);
+  });
   createWindow();
 });
 
@@ -460,5 +475,6 @@ app.on('window-all-closed', () => {
     dataSource.dispose();
     dataSource = null;
   }
+  gpioManager.dispose();
   app.quit();
 });

@@ -12,12 +12,13 @@ export interface MeterRenderParams {
   unit: string;
   config: MeterConfig;
   backgroundImage?: HTMLImageElement | null;
+  needleImage?: HTMLImageElement | null;
   fontFamily?: string;
   decimals?: number;
 }
 
 export function renderMeter(params: MeterRenderParams): void {
-  const { ctx, width, height, value, min, max, title, unit, config, backgroundImage, fontFamily, decimals } = params;
+  const { ctx, width, height, value, min, max, title, unit, config, backgroundImage, needleImage, fontFamily, decimals } = params;
   const size = Math.min(width, height);
   const cx = width / 2;
   const cy = height / 2;
@@ -94,26 +95,39 @@ export function renderMeter(params: MeterRenderParams): void {
 
   // Draw needle
   const needleAngle = arcStartRad + ratio * sweepRad;
-  const needleLen = radius * config.needleLength;
-  const needleWidth = size * config.needleSizeRatio;
 
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.rotate(needleAngle);
-  ctx.beginPath();
-  ctx.moveTo(needleLen, 0);
-  ctx.lineTo(-needleWidth * 2, -needleWidth);
-  ctx.lineTo(-needleWidth * 2, needleWidth);
-  ctx.closePath();
-  ctx.fillStyle = config.needleColor;
-  ctx.fill();
-  ctx.restore();
+  if (needleImage) {
+    // Needle image: 480x480, needle pointing at 12 o'clock (up = -π/2).
+    // Rotate from 12 o'clock base to target angle: needleAngle - (-π/2) = needleAngle + π/2
+    const imgSize = size;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(needleAngle + Math.PI / 2);
+    ctx.drawImage(needleImage, -imgSize / 2, -imgSize / 2, imgSize, imgSize);
+    ctx.restore();
+  } else {
+    // Fallback: draw triangle needle
+    const needleLen = radius * config.needleLength;
+    const needleWidth = size * config.needleSizeRatio;
 
-  // Center dot
-  ctx.beginPath();
-  ctx.arc(cx, cy, size * 0.03, 0, Math.PI * 2);
-  ctx.fillStyle = config.needleColor;
-  ctx.fill();
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(needleAngle);
+    ctx.beginPath();
+    ctx.moveTo(needleLen, 0);
+    ctx.lineTo(-needleWidth * 2, -needleWidth);
+    ctx.lineTo(-needleWidth * 2, needleWidth);
+    ctx.closePath();
+    ctx.fillStyle = config.needleColor;
+    ctx.fill();
+    ctx.restore();
+
+    // Center dot (only for fallback triangle needle)
+    ctx.beginPath();
+    ctx.arc(cx, cy, size * 0.03, 0, Math.PI * 2);
+    ctx.fillStyle = config.needleColor;
+    ctx.fill();
+  }
 
   // Draw title
   ctx.fillStyle = config.textColor;

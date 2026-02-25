@@ -11,14 +11,20 @@ export interface GraphRenderParams {
   title: string;
   unit: string;
   config: GraphConfig;
+  backgroundImage?: HTMLImageElement | null;
 }
 
 const MARGIN = { top: 8, right: 8, bottom: 24, left: 48 };
 
 export function renderGraph(params: GraphRenderParams): void {
-  const { ctx, width, height, points, min, max, title, unit, config } = params;
+  const { ctx, width, height, points, min, max, title, unit, config, backgroundImage } = params;
 
   ctx.clearRect(0, 0, width, height);
+
+  // Draw background image (stretched to full panel)
+  if (backgroundImage) {
+    ctx.drawImage(backgroundImage, 0, 0, width, height);
+  }
 
   const plotW = width - MARGIN.left - MARGIN.right;
   const plotH = height - MARGIN.top - MARGIN.bottom;

@@ -11,6 +11,7 @@ export interface ThemeAssets {
   dialBackground?: string;    // base64 data URL
   displayBackground?: string; // base64 data URL
   background?: string;        // base64 data URL
+  needle?: string;            // base64 data URL (480x480, needle pointing 12 o'clock)
   fontBase64?: string;        // base64 raw (for @font-face)
 }
 
@@ -153,6 +154,9 @@ export function loadTheme(themeId: string, extraDirs?: string[]): ThemeData | nu
 
   const bg = findFile(themeDir, ['background.jpg', 'background.png', 'background.jpeg']);
   if (bg) assets.background = fileToDataUrl(bg, getMimeType(bg));
+
+  const needle = findFile(themeDir, ['needle.png']);
+  if (needle) assets.needle = fileToDataUrl(needle, 'image/png');
 
   const font = findFile(themeDir, ['font.ttf', 'font.otf']);
   if (font) assets.fontBase64 = fs.readFileSync(font).toString('base64');

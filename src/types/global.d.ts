@@ -1,4 +1,4 @@
-import { SystemStats, OBDPidInfo, OBDValue, ThemeInfo, ThemeData, BTDevice, WiFiNetwork, UsbDevice, UsbResult } from './index';
+import { SystemStats, OBDPidInfo, OBDValue, ThemeInfo, ThemeData, BTDevice, WiFiNetwork, UsbDevice, UsbResult, GpioChangeEvent } from './index';
 
 declare global {
   const __GIT_COMMIT__: string;
@@ -54,6 +54,11 @@ declare global {
       wifiConnect: (ssid: string, password: string) => Promise<boolean>;
       wifiDisconnect: () => Promise<boolean>;
       wifiGetCurrent: () => Promise<string | null>;
+
+      // GPIO
+      gpioSetup: (pins: number[]) => Promise<void>;
+      gpioRead: (pin: number) => Promise<number>;
+      onGpioChange: (callback: (event: GpioChangeEvent) => void) => () => void;
 
       // Logs
       getLogs: () => Promise<Array<{ timestamp: string; level: string; tag: string; message: string }>>;

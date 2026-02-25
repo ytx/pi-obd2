@@ -1,9 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useAppStore } from '@/stores/useAppStore';
 import { useOBDStore } from '@/stores/useOBDStore';
 import { useBoardStore } from '@/stores/useBoardStore';
 import { useThemeStore } from '@/stores/useThemeStore';
-import { OBDConnectionState } from '@/types';
+import { useGpioStore } from '@/stores/useGpioStore';
+import { OBDConnectionState, ThemeData, GpioChangeEvent } from '@/types';
 import { waitForHydration } from '@/stores/hydration';
 import BoardContainer from '@/components/boards/BoardContainer';
 
@@ -11,6 +12,7 @@ function DashboardScreen() {
   const { setScreen } = useAppStore();
   const {
     connectionState,
+    isStubMode,
     setConnectionState,
     updateValues,
     setStubMode,
@@ -18,8 +20,12 @@ function DashboardScreen() {
     setProfiles,
   } = useOBDStore();
 
-  const { setAvailableThemes } = useThemeStore();
+  const { setAvailableThemes, applyTheme, clearTheme } = useThemeStore();
   const screenPadding = useBoardStore((s) => s.screenPadding);
+
+  // GPIO saved state refs (for restoring on OFF)
+  const savedThemeIdRef = useRef<string | null | undefined>(undefined);
+  const savedBoardIdRef = useRef<string | null>(null);
 
   // Initialize: load available PIDs, stub mode, profiles, themes, register event listeners
   // Then auto-connect after hydration
@@ -58,11 +64,84 @@ function DashboardScreen() {
     };
   }, [setAvailablePids, setStubMode, setConnectionState, updateValues, setProfiles, setAvailableThemes]);
 
-  // Connection state dot color
+  // GPIO change listener — illumination (theme switch) and reverse (board switch)
+  useEffect(() => {
+    if (!window.obd2API?.onGpioChange) return;
+
+    // Setup GPIO pins after hydration
+    waitForHydration(useGpioStore).then(() => {
+      const { illuminationPin, reversePin } = useGpioStore.getState();
+      const pins: number[] = [];
+      if (illuminationPin !== null) pins.push(illuminationPin);
+      if (reversePin !== null) pins.push(reversePin);
+      if (pins.length > 0) {
+        window.obd2API.gpioSetup(pins);
+      }
+    });
+
+    const removeGpio = window.obd2API.onGpioChange(async (event: GpioChangeEvent) => {
+      const gpioState = useGpioStore.getState();
+      const { illuminationPin, reversePin, illuminationThemeId, reverseBoardId } = gpioState;
+
+      // Illumination
+      if (event.pin === illuminationPin) {
+        if (event.value === 1 && illuminationThemeId) {
+          // ON — save current theme and switch
+          savedThemeIdRef.current = useThemeStore.getState().currentThemeId;
+          useGpioStore.getState().setIlluminationActive(true);
+          try {
+            const data = await window.obd2API.themeLoad(illuminationThemeId);
+            if (data) applyTheme(data as ThemeData);
+          } catch (e) {
+            console.warn('GPIO illumination theme load failed:', e);
+          }
+        } else if (event.value === 0) {
+          // OFF — restore saved theme
+          useGpioStore.getState().setIlluminationActive(false);
+          const saved = savedThemeIdRef.current;
+          savedThemeIdRef.current = undefined;
+          if (saved) {
+            try {
+              const data = await window.obd2API.themeLoad(saved);
+              if (data) applyTheme(data as ThemeData);
+            } catch (e) {
+              console.warn('GPIO illumination theme restore failed:', e);
+            }
+          } else {
+            clearTheme();
+          }
+        }
+      }
+
+      // Reverse
+      if (event.pin === reversePin) {
+        if (event.value === 1 && reverseBoardId) {
+          // ON — save current board and switch
+          savedBoardIdRef.current = useBoardStore.getState().currentBoardId;
+          useGpioStore.getState().setReverseActive(true);
+          useBoardStore.getState().setCurrentBoardId(reverseBoardId);
+        } else if (event.value === 0) {
+          // OFF — restore saved board
+          useGpioStore.getState().setReverseActive(false);
+          const saved = savedBoardIdRef.current;
+          savedBoardIdRef.current = null;
+          if (saved) {
+            useBoardStore.getState().setCurrentBoardId(saved);
+          }
+        }
+      }
+    });
+
+    return () => {
+      removeGpio();
+    };
+  }, [applyTheme, clearTheme]);
+
+  // Connection state dot color (yellow for stub mode)
   const dotColor: Record<string, string> = {
     disconnected: 'bg-obd-dim',
     connecting: 'bg-yellow-400 animate-pulse',
-    connected: 'bg-green-400',
+    connected: isStubMode ? 'bg-yellow-400' : 'bg-green-400',
     error: 'bg-red-500',
   };
 
