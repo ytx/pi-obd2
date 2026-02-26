@@ -6,17 +6,9 @@ import { OBD_PIDS } from './pids';
 import { logger } from '../logger';
 
 const RFCOMM_DEV = '/dev/rfcomm0';
-const COMMAND_TIMEOUT = 5000;
+const COMMAND_TIMEOUT = 10000;
 const READ_CHUNK_SIZE = 1024;
-
-const AT_INIT_SEQUENCE = [
-  'ATZ',   // Reset
-  'ATE0',  // Echo off
-  'ATH0',  // Headers off
-  'ATL0',  // Linefeeds off
-  'ATS0',  // Spaces off
-  'ATSP0', // Auto protocol
-];
+const BAUD_RATE = 38400;
 
 export class ELM327Source implements DataSource {
   private state: OBDConnectionState = 'disconnected';
@@ -26,22 +18,25 @@ export class ELM327Source implements DataSource {
   private connectionCallbacks: ((state: OBDConnectionState) => void)[] = [];
   private polling = false;
   private pollAbort = false;
+  private protocolName: string | null = null;
 
   async connect(btAddress?: string): Promise<void> {
     if (this.state === 'connected') return;
     this.setState('connecting');
 
     try {
-      // Bind rfcomm if address provided
       if (btAddress) {
-        await this.rfcommBind(btAddress);
+        this.rfcommBind(btAddress);
       }
+
+      // Configure serial port with stty (like pyserial's Serial() constructor)
+      this.configurePort();
 
       // Open the rfcomm device
       this.fd = fs.openSync(RFCOMM_DEV, 'r+');
 
-      // Run AT init sequence
-      await this.atInit();
+      // Initialize ELM327 (following python-obd's proven sequence)
+      await this.elmInit();
 
       this.setState('connected');
       this.startPolling();
@@ -90,7 +85,6 @@ export class ELM327Source implements DataSource {
   }
 
   private rfcommBind(btAddress: string): void {
-    // Release any existing binding first (ignore errors)
     try {
       execSync('sudo rfcomm release 0', { stdio: 'pipe' });
     } catch { /* ignore */ }
@@ -102,7 +96,6 @@ export class ELM327Source implements DataSource {
       throw new Error(`rfcomm bind failed: ${err}`);
     }
 
-    // Wait briefly for device node to appear
     for (let i = 0; i < 10; i++) {
       if (fs.existsSync(RFCOMM_DEV)) break;
       execSync('sleep 0.1');
@@ -111,7 +104,6 @@ export class ELM327Source implements DataSource {
       throw new Error(`${RFCOMM_DEV} not found after rfcomm bind`);
     }
 
-    // sudo rfcomm bind creates the device as root — fix permissions
     try {
       const uid = process.getuid?.() ?? 1000;
       const gid = process.getgid?.() ?? 1000;
@@ -121,41 +113,105 @@ export class ELM327Source implements DataSource {
     }
   }
 
-  private async atInit(): Promise<void> {
-    // python-obd approach: flush buffer, send garbage to elicit prompt, then ATZ
-    // 1. Wait for BT SPP connection to stabilize
-    await new Promise((r) => setTimeout(r, 500));
-    this.drainRead();
-
-    // 2. Send nonsense bytes + CR to get a prompt (like python-obd's auto_baudrate)
-    //    This clears any stale data and confirms communication
+  /** Configure serial port settings (equivalent to pyserial's Serial() params) */
+  private configurePort(): void {
     try {
-      await this.sendCommand('\x7F\x7F');
-    } catch { /* ignore timeout or garbage */ }
-    this.drainRead();
-
-    // 3. ATZ (reset) — response may contain junk, don't validate strictly
-    //    python-obd: "return data can be junk, so don't bother checking"
-    const atzResp = await this.sendCommand('ATZ');
-    logger.info('ELM327', `ATZ → ${atzResp.replace(/\r/g, '\\r')}`);
-    // Wait for ELM327 to finish resetting
-    await new Promise((r) => setTimeout(r, 1000));
-    this.drainRead();
-
-    // 4. Remaining init commands — these should work cleanly after reset
-    for (const cmd of AT_INIT_SEQUENCE.slice(1)) {
-      const resp = await this.sendCommand(cmd);
-      logger.info('ELM327', `${cmd} → ${resp.replace(/\r/g, '\\r')}`);
-    }
-
-    // 5. Verify communication by checking echo is off (send empty, expect just prompt)
-    const verifyResp = await this.sendCommand('ATI');
-    logger.info('ELM327', `ATI → ${verifyResp.replace(/\r/g, '\\r')}`);
-    if (!verifyResp.includes('ELM327')) {
-      throw new Error(`ELM327 not detected (ATI response: ${verifyResp})`);
+      execSync(
+        `stty -F ${RFCOMM_DEV} ${BAUD_RATE} raw -echo -echoe -echok -echoctl -echoke`,
+        { stdio: 'pipe' },
+      );
+      logger.info('ELM327', `stty configured: ${BAUD_RATE} baud, raw mode`);
+    } catch (err) {
+      logger.warn('ELM327', `stty failed (may still work): ${err}`);
     }
   }
 
+  /**
+   * ELM327 initialization — mirrors python-obd's proven sequence:
+   * 1. Wait for BT SPP to stabilize, drain until quiet
+   * 2. Send garbage to elicit prompt '>'
+   * 3. ATZ (reset, delay 1s, don't validate response)
+   * 4. ATE0 (echo off, validate OK)
+   * 5. ATH0 / ATL0 / ATS0
+   * 6. ATSP0 + 0100 (auto protocol detection)
+   * 7. ATDPN (read detected protocol)
+   */
+  private async elmInit(): Promise<void> {
+    // 1. Wait for BT SPP to stabilize, then drain until no data for 1s
+    logger.info('ELM327', 'Waiting for BT SPP to stabilize...');
+    await this.drainUntilQuiet(2000, 500);
+
+    // 2. Send garbage bytes to get a '>' prompt (like python-obd auto_baudrate)
+    logger.info('ELM327', 'Probing for ELM327 prompt...');
+    let gotPrompt = false;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await this.sendCommand('\x7F\x7F');
+        gotPrompt = true;
+        break;
+      } catch {
+        logger.warn('ELM327', `Probe attempt ${attempt + 1} failed, retrying...`);
+        await this.drainUntilQuiet(500, 200);
+      }
+    }
+    if (!gotPrompt) {
+      throw new Error('No prompt from ELM327 (device not responding)');
+    }
+
+    // 3. ATZ (reset) — python-obd: "return data can be junk, so don't bother checking"
+    try {
+      const atzResp = await this.sendCommand('ATZ');
+      logger.info('ELM327', `ATZ → ${this.sanitize(atzResp)}`);
+    } catch {
+      logger.warn('ELM327', 'ATZ timed out (may be normal during reset)');
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+    await this.drainUntilQuiet(500, 200);
+
+    // 4. ATE0 (echo off) — first command that must succeed
+    const ate0 = await this.sendCommand('ATE0');
+    logger.info('ELM327', `ATE0 → ${this.sanitize(ate0)}`);
+    if (!ate0.includes('OK')) {
+      logger.warn('ELM327', 'ATE0 did not return OK, continuing anyway');
+    }
+
+    // 5. ATH0, ATL0, ATS0
+    for (const cmd of ['ATH0', 'ATL0', 'ATS0']) {
+      const resp = await this.sendCommand(cmd);
+      logger.info('ELM327', `${cmd} → ${this.sanitize(resp)}`);
+    }
+
+    // 6. Protocol detection: ATSP0 → 0100 → ATDPN
+    const sp0 = await this.sendCommand('ATSP0');
+    logger.info('ELM327', `ATSP0 → ${this.sanitize(sp0)}`);
+
+    // 0100 triggers protocol search (may take several seconds)
+    logger.info('ELM327', 'Searching for vehicle protocol (0100)...');
+    const r0100 = await this.sendCommand('0100');
+    logger.info('ELM327', `0100 → ${this.sanitize(r0100)}`);
+    if (r0100.toUpperCase().includes('UNABLE TO CONNECT')) {
+      logger.warn('ELM327', 'Vehicle not responding (ignition off?)');
+    }
+
+    // ATDPN — read detected protocol number
+    const dpn = await this.sendCommand('ATDPN');
+    logger.info('ELM327', `ATDPN → ${this.sanitize(dpn)}`);
+    this.protocolName = dpn.replace(/^A/, '').trim(); // strip "A" prefix (auto)
+
+    // 7. Verify with ATI
+    const ati = await this.sendCommand('ATI');
+    logger.info('ELM327', `ATI → ${this.sanitize(ati)}`);
+    if (!ati.includes('ELM327')) {
+      throw new Error(`ELM327 not detected (ATI: ${this.sanitize(ati)})`);
+    }
+
+    logger.info('ELM327', `Initialized (protocol=${this.protocolName})`);
+  }
+
+  /**
+   * Send command and wait for '>' prompt.
+   * Drains input buffer before writing (like pyserial's flushInput).
+   */
   private sendCommand(cmd: string): Promise<string> {
     return new Promise((resolve, reject) => {
       if (this.fd === null) {
@@ -164,6 +220,10 @@ export class ELM327Source implements DataSource {
       }
 
       const fd = this.fd;
+
+      // Flush input buffer before writing (critical — pyserial does this on every write)
+      this.drainRead();
+
       const cmdBuf = Buffer.from(cmd + '\r', 'ascii');
       fs.writeSync(fd, cmdBuf);
 
@@ -181,16 +241,14 @@ export class ELM327Source implements DataSource {
           const bytesRead = fs.readSync(fd, readBuf, 0, READ_CHUNK_SIZE, null);
           if (bytesRead > 0) {
             response += readBuf.toString('ascii', 0, bytesRead);
-            // ELM327 prompt character signals end of response
             if (response.includes('>')) {
               resolve(response.replace(/>/g, '').trim());
               return;
             }
           }
         } catch (err: unknown) {
-          // EAGAIN = no data available yet (non-blocking); keep trying
           if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'EAGAIN') {
-            // no data yet
+            // no data yet — keep trying
           } else {
             reject(err);
             return;
@@ -204,21 +262,61 @@ export class ELM327Source implements DataSource {
     });
   }
 
+  /** Drain input buffer synchronously (like pyserial flushInput) */
   private drainRead(): void {
     if (this.fd === null) return;
     const buf = Buffer.alloc(READ_CHUNK_SIZE);
     let drained = 0;
     try {
-      // Read and discard any buffered data (EAGAIN = empty, stop)
-      for (let i = 0; i < 20; i++) {
+      for (let i = 0; i < 50; i++) {
         const n = fs.readSync(this.fd, buf, 0, READ_CHUNK_SIZE, null);
         if (n === 0) break;
         drained += n;
       }
-    } catch { /* EAGAIN or other — buffer is empty */ }
+    } catch { /* EAGAIN = empty */ }
     if (drained > 0) {
-      logger.info('ELM327', `Drained ${drained} bytes of stale data`);
+      logger.info('ELM327', `Drained ${drained} bytes`);
     }
+  }
+
+  /**
+   * Wait until no data arrives for `quietMs`, up to `maxWaitMs` total.
+   * Used to wait for BT SPP connection noise to stop.
+   */
+  private async drainUntilQuiet(maxWaitMs: number, quietMs: number): Promise<void> {
+    const start = Date.now();
+    let lastDataTime = Date.now();
+    let totalDrained = 0;
+
+    while (Date.now() - start < maxWaitMs) {
+      const before = totalDrained;
+      this.drainRead();
+      // drainRead logs its own count; we track via fd reads
+      // Just check if time since last data exceeds quietMs
+      const buf = Buffer.alloc(READ_CHUNK_SIZE);
+      let gotData = false;
+      try {
+        const n = fs.readSync(this.fd!, buf, 0, READ_CHUNK_SIZE, null);
+        if (n > 0) {
+          totalDrained += n;
+          gotData = true;
+          lastDataTime = Date.now();
+        }
+      } catch { /* EAGAIN = no data */ }
+
+      if (!gotData && Date.now() - lastDataTime >= quietMs) {
+        break; // quiet period achieved
+      }
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    if (totalDrained > 0) {
+      logger.info('ELM327', `drainUntilQuiet: drained ${totalDrained} bytes total`);
+    }
+  }
+
+  /** Sanitize response string for logging */
+  private sanitize(s: string): string {
+    return s.replace(/\r/g, '\\r').replace(/\n/g, '\\n').substring(0, 200);
   }
 
   private startPolling(): void {
@@ -231,7 +329,6 @@ export class ELM327Source implements DataSource {
   private async stopPolling(): Promise<void> {
     this.pollAbort = true;
     this.polling = false;
-    // Wait briefly for loop to exit
     await new Promise((r) => setTimeout(r, 200));
   }
 
@@ -251,10 +348,7 @@ export class ELM327Source implements DataSource {
           const pidDef = OBD_PIDS[pid];
           if (!pidDef) continue;
 
-          // Send PID query (e.g. "010C")
           const resp = await this.sendCommand(pid);
-
-          // Parse response
           const value = this.parseResponse(pid, resp);
           if (value !== null) {
             values.push({ pid, value, timestamp: now });
@@ -266,7 +360,6 @@ export class ELM327Source implements DataSource {
         }
       } catch (err) {
         logger.error('ELM327', `Poll error: ${err}`);
-        // Connection lost
         if (this.polling) {
           this.polling = false;
           this.setState('error');
@@ -277,7 +370,6 @@ export class ELM327Source implements DataSource {
   }
 
   private parseResponse(pid: string, resp: string): number | null {
-    // Skip error responses
     const upper = resp.toUpperCase();
     if (upper.includes('NO DATA') || upper.includes('ERROR') || upper.includes('UNABLE TO CONNECT') || upper.includes('?')) {
       return null;
@@ -286,15 +378,11 @@ export class ELM327Source implements DataSource {
     const pidDef = OBD_PIDS[pid];
     if (!pidDef) return null;
 
-    // Clean: remove spaces, \r, \n
     const clean = resp.replace(/[\s\r\n]/g, '').toUpperCase();
-
-    // Expected response header: "41" + mode-1 PID (e.g. pid "010C" → header "410C")
     const expectedHeader = '41' + pid.substring(2);
     const idx = clean.indexOf(expectedHeader);
     if (idx === -1) return null;
 
-    // Extract data bytes after header
     const dataHex = clean.substring(idx + expectedHeader.length);
     const bytes: number[] = [];
     for (let i = 0; i < pidDef.bytes * 2; i += 2) {
@@ -303,20 +391,14 @@ export class ELM327Source implements DataSource {
     }
 
     if (bytes.some(isNaN)) return null;
-
     return pidDef.formula(bytes);
   }
 
   private async cleanup(): Promise<void> {
-    // Close file descriptor
     if (this.fd !== null) {
-      try {
-        fs.closeSync(this.fd);
-      } catch { /* ignore */ }
+      try { fs.closeSync(this.fd); } catch { /* ignore */ }
       this.fd = null;
     }
-
-    // Release rfcomm
     try {
       execSync('sudo rfcomm release 0', { stdio: 'pipe' });
     } catch { /* ignore */ }
