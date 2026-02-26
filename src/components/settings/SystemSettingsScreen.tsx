@@ -196,7 +196,7 @@ function SystemSettingsScreen() {
           <h2 className="text-lg font-semibold text-obd-primary mb-3">System</h2>
           <div className="grid grid-cols-2 gap-2 text-sm">
             <span className="text-obd-dim">Hostname</span>
-            <span>{hostname || '-'}</span>
+            <span>{hostname || '-'} ({__GIT_COMMIT__})</span>
             {systemStats && (
               <>
                 <span className="text-obd-dim">CPU</span>

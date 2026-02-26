@@ -122,16 +122,37 @@ export class ELM327Source implements DataSource {
   }
 
   private async atInit(): Promise<void> {
-    // Drain any pending data
+    // python-obd approach: flush buffer, send garbage to elicit prompt, then ATZ
+    // 1. Wait for BT SPP connection to stabilize
+    await new Promise((r) => setTimeout(r, 500));
     this.drainRead();
 
-    for (const cmd of AT_INIT_SEQUENCE) {
+    // 2. Send nonsense bytes + CR to get a prompt (like python-obd's auto_baudrate)
+    //    This clears any stale data and confirms communication
+    try {
+      await this.sendCommand('\x7F\x7F');
+    } catch { /* ignore timeout or garbage */ }
+    this.drainRead();
+
+    // 3. ATZ (reset) — response may contain junk, don't validate strictly
+    //    python-obd: "return data can be junk, so don't bother checking"
+    const atzResp = await this.sendCommand('ATZ');
+    logger.info('ELM327', `ATZ → ${atzResp.replace(/\r/g, '\\r')}`);
+    // Wait for ELM327 to finish resetting
+    await new Promise((r) => setTimeout(r, 1000));
+    this.drainRead();
+
+    // 4. Remaining init commands — these should work cleanly after reset
+    for (const cmd of AT_INIT_SEQUENCE.slice(1)) {
       const resp = await this.sendCommand(cmd);
       logger.info('ELM327', `${cmd} → ${resp.replace(/\r/g, '\\r')}`);
+    }
 
-      if (cmd === 'ATZ' && !resp.includes('ELM327')) {
-        throw new Error(`Unexpected ATZ response: ${resp}`);
-      }
+    // 5. Verify communication by checking echo is off (send empty, expect just prompt)
+    const verifyResp = await this.sendCommand('ATI');
+    logger.info('ELM327', `ATI → ${verifyResp.replace(/\r/g, '\\r')}`);
+    if (!verifyResp.includes('ELM327')) {
+      throw new Error(`ELM327 not detected (ATI response: ${verifyResp})`);
     }
   }
 
@@ -186,13 +207,18 @@ export class ELM327Source implements DataSource {
   private drainRead(): void {
     if (this.fd === null) return;
     const buf = Buffer.alloc(READ_CHUNK_SIZE);
+    let drained = 0;
     try {
-      // Read and discard any buffered data
-      for (let i = 0; i < 10; i++) {
+      // Read and discard any buffered data (EAGAIN = empty, stop)
+      for (let i = 0; i < 20; i++) {
         const n = fs.readSync(this.fd, buf, 0, READ_CHUNK_SIZE, null);
         if (n === 0) break;
+        drained += n;
       }
-    } catch { /* ignore */ }
+    } catch { /* EAGAIN or other — buffer is empty */ }
+    if (drained > 0) {
+      logger.info('ELM327', `Drained ${drained} bytes of stale data`);
+    }
   }
 
   private startPolling(): void {
