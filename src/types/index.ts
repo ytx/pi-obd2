@@ -1,4 +1,4 @@
-export type Screen = 'dashboard' | 'system-settings' | 'display-settings' | 'dev-settings';
+export type Screen = 'dashboard' | 'menu' | 'system-settings' | 'display-settings' | 'layout-editor' | 'dev-settings';
 
 export interface SystemStats {
   cpuUsage: number;
@@ -106,20 +106,17 @@ export interface BoardSlot {
   timeWindowMs?: number; // graph: time window in ms
 }
 
-export interface LayoutCell {
-  row: number;
-  col: number;
-  rowSpan?: number;
-  colSpan?: number;
+export interface LayoutSlot {
+  x: number;  // 0-63
+  y: number;  // 0-35
+  w: number;  // 1-64
+  h: number;  // 1-36
 }
 
 export interface Layout {
   id: string;
   name: string;
-  columns: number;
-  rows: number;
-  gap: number;
-  cells: LayoutCell[];
+  slots: LayoutSlot[];  // z-order = array order (later = on top)
 }
 
 export interface Board {

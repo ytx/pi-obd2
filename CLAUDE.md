@@ -41,12 +41,13 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 
 ### React レンダラ (`src/`)
 
-- `components/DashboardScreen.tsx` - メイン画面（フルスクリーンボード + タップゾーンナビ + 接続ドットオーバーレイ）
+- `components/DashboardScreen.tsx` - メイン画面（フルスクリーンボード + 左上タップでメニュー + 接続ドットオーバーレイ）
 - `components/settings/SystemSettingsScreen.tsx` - システム設定（接続・BT・WiFi・USB・システム情報・アクション）
 - `components/settings/DisplaySettingsScreen.tsx` - 表示設定（テーマ・ボード編集）
 - `components/settings/DevSettingsScreen.tsx` - 開発設定（スタブシミュレーター、ログビューア）
 - `components/boards/BoardContainer.tsx` - ボード切替コンテナ（スワイプ + キーボード）
-- `components/boards/BoardView.tsx` - CSS Grid ボードビュー
+- `components/MenuScreen.tsx` - 3x3 メニュー画面（各設定画面・レイアウトエディタへの遷移）
+- `components/boards/BoardView.tsx` - 64x36 グリッド absolute positioning ボードビュー
 - `components/boards/useSwipe.ts` - タッチスワイプ検出フック
 - `components/panels/PanelSlot.tsx` - パネル種別ルーティング + スロットオーバーライド適用
 - `components/panels/NumericPanel.tsx` - 数値パネル（HTML、等幅桁表示）
@@ -59,6 +60,7 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 - `components/settings/UsbSection.tsx` - USB メモリ（検出・マウント・設定エクスポート/インポート）
 - `components/settings/GpioSection.tsx` - GPIO 設定（イルミ・リバース ピン/テーマ/ボード選択）
 - `components/settings/LogSection.tsx` - ログビューア（フィルター、自動スクロール、2秒ポーリング）
+- `components/settings/LayoutEditorScreen.tsx` - レイアウトエディタ（64x36 グリッド、スロット追加/削除/位置変更/z-order）
 - `components/settings/ThemeSection.tsx` - テーマ選択（スクリーンショット付き）
 - `canvas/meter-renderer.ts` - メーター Canvas 描画（純粋関数）
 - `canvas/graph-renderer.ts` - グラフ Canvas 描画（純粋関数）
@@ -78,13 +80,23 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 
 - **Board** - ボード（名前、レイアウト参照、`panels: (BoardSlot | null)[]`）
 - **BoardSlot** - スロット（`panelDefId` 表示テンプレート + `pid` データソース + オーバーライド）
-- **Layout** - レイアウト（CSS Grid 定義: columns, rows, gap, cells）— プリセット7種
+- **Layout** - レイアウト（`slots: LayoutSlot[]` — 64x36 グリッド上の自由配置）
+- **LayoutSlot** - スロット位置・サイズ（`x`, `y`, `w`, `h` — 64x36 グリッド座標）
 - **PanelDef** - パネル定義（`id`, `kind`, `config` — PID 非依存の表示テンプレート）
 - **PanelKind** - `'numeric' | 'meter' | 'graph'`
 
 データソース（PID）と表示形式（PanelDef）は分離されており、任意の組み合わせが可能。
 
-### プリセットレイアウト
+### レイアウトシステム
+
+64x36 グリッド（16:9）による自由配置。レイアウトはユーザーが作成・編集可能。
+
+- グリッド: 64 列 x 36 行（各セルが均等）
+- スロット: `{ x, y, w, h }` で位置とサイズを指定
+- z-order: `slots` 配列の順序（後が上）
+- 描画: absolute positioning（`left/top/width/height` を % で計算）
+
+**デフォルトレイアウト（7種）:**
 
 | ID | 名前 | スロット数 | 構成 |
 |---|---|---|---|
@@ -102,6 +114,8 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 - `addBoard` / `removeBoard` / `renameBoard` — ボード追加・削除・名前変更
 - `changeBoardLayout` — レイアウト変更（パネル配列を自動リサイズ: 既存保持、不足分は null）
 - `nextBoard` / `prevBoard` — キー/スワイプでのボード切替
+- `addLayout` / `removeLayout` / `updateLayout` / `duplicateLayout` — レイアウト CRUD
+- `addLayoutSlot` / `removeLayoutSlot` / `updateLayoutSlot` / `reorderLayoutSlot` — スロット操作
 
 ### BoardSlot オーバーライド
 
@@ -196,7 +210,11 @@ themes/<theme-name>/
 - ヘッダーなし、フルスクリーンボード表示、起動時自動接続
 - 接続状態ドット: 右上にオーバーレイ（pointer-events-none）
 - ボード切替: 左右フリック / 左右キー、インジケータドット表示
-- タップゾーンナビ（角100x100px）: 右上→システム設定、右下→表示設定、左下→開発設定
+- 左上タップゾーン（100x100px）→ メニュー画面
+
+**メニュー画面（3x3 グリッド）:**
+- Display Settings / Layout Editor / System Settings / Dev Settings
+- 背景タップでダッシュボードに戻る
 
 **システム設定画面（右上タップ）:**
 - OBD2 接続（状態、Connect/Stub/Disconnect、STUB モード表示、ELM327 アドレス表示）
@@ -221,7 +239,7 @@ Zustand `persist` ミドルウェアで以下を永続化:
 
 | ストア | storage key | 永続化する状態 | 永続化しない状態 |
 |---|---|---|---|
-| `useBoardStore` | `obd2-boards` | `boards`, `currentBoardId`, `screenPadding` | `layouts`, `panelDefs`（静的デフォルト） |
+| `useBoardStore` | `obd2-boards` (v2) | `boards`, `layouts`, `currentBoardId`, `screenPadding` | `panelDefs`（静的デフォルト） |
 | `useThemeStore` | `obd2-theme` | `currentThemeId` | テーマデータ・派生状態（base64 が巨大） |
 | `useOBDStore` | `obd2-bt` | `obdBtAddress` | 接続状態・ライブデータ |
 | `useGpioStore` | `obd2-gpio` | `illuminationPin`, `reversePin`, `illuminationThemeId`, `reverseBoardId` | `illuminationActive`, `reverseActive`（ランタイム） |
@@ -265,8 +283,8 @@ sonix2 の USB マウントパターンを踏襲:
 ```
 
 **設定エクスポート/インポート:**
-- `obd2-config.json` に `{ version, boards, currentBoardId, screenPadding, currentThemeId }` を保存
-- インポート時は useBoardStore/useThemeStore に直接 setState
+- `obd2-config.json` に `{ version: 2, boards, layouts, currentBoardId, screenPadding, currentThemeId }` を保存
+- インポート時は v1（layouts なし）と v2（layouts あり）の両方を処理
 - テーマ ID が変わっていれば `themeLoad()` → `applyTheme()` / `clearTheme()`
 
 **USB テーマ:**

@@ -13,21 +13,23 @@ function BoardView() {
   return (
     <div
       key={gridKey}
-      className="w-full h-full bg-cover bg-center"
+      className="relative w-full h-full"
       style={{
-        display: 'grid',
-        gridTemplateColumns: `repeat(${layout.columns}, 1fr)`,
-        gridTemplateRows: `repeat(${layout.rows}, 1fr)`,
-        gap: `${layout.gap}px`,
+        aspectRatio: '16/9',
         backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : undefined,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
       }}
     >
-      {layout.cells.map((cell, i) => (
+      {layout.slots.map((slot, i) => (
         <div
           key={`${gridKey}-${i}`}
           style={{
-            gridRow: `${cell.row + 1} / span ${cell.rowSpan ?? 1}`,
-            gridColumn: `${cell.col + 1} / span ${cell.colSpan ?? 1}`,
+            position: 'absolute',
+            left: `${(slot.x / 64) * 100}%`,
+            top: `${(slot.y / 36) * 100}%`,
+            width: `${(slot.w / 64) * 100}%`,
+            height: `${(slot.h / 36) * 100}%`,
           }}
         >
           <PanelSlot slot={board.panels[i] ?? null} />

@@ -165,21 +165,10 @@ function DashboardScreen() {
         <span className={`block w-3 h-3 rounded-full ${dotColor[connectionState] ?? 'bg-obd-dim'}`} />
       </div>
 
-      {/* Tap zones - transparent, absolute positioned */}
-      {/* Top-right: System Settings */}
+      {/* Tap zone - top-left: Menu */}
       <div
-        className="absolute top-0 right-0 w-[100px] h-[100px] cursor-pointer"
-        onClick={() => setScreen('system-settings')}
-      />
-      {/* Bottom-right: Display Settings */}
-      <div
-        className="absolute bottom-0 right-0 w-[100px] h-[100px] cursor-pointer"
-        onClick={() => setScreen('display-settings')}
-      />
-      {/* Bottom-left: Dev Settings */}
-      <div
-        className="absolute bottom-0 left-0 w-[100px] h-[100px] cursor-pointer"
-        onClick={() => setScreen('dev-settings')}
+        className="absolute top-0 left-0 w-[100px] h-[100px] cursor-pointer"
+        onClick={() => setScreen('menu')}
       />
     </div>
   );

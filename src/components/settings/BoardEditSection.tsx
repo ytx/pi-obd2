@@ -27,7 +27,7 @@ function BoardEditSection() {
     const id = `board-${Date.now()}`;
     const layoutId = allLayouts[0]?.id ?? 'default';
     const ly = layouts[layoutId];
-    const panels: (BoardSlot | null)[] = Array.from({ length: ly?.cells.length ?? 0 }, () => null);
+    const panels: (BoardSlot | null)[] = Array.from({ length: ly?.slots.length ?? 0 }, () => null);
     addBoard({ id, name: `Board ${boards.length + 1}`, layoutId, panels });
     setSelectedBoardId(id);
     setEditingSlot(null);
@@ -166,7 +166,7 @@ function BoardEditSection() {
               >
                 {allLayouts.map((ly) => (
                   <option key={ly.id} value={ly.id}>
-                    {ly.name} ({ly.cells.length} slots)
+                    {ly.name} ({ly.slots.length} slots)
                   </option>
                 ))}
               </select>
@@ -187,25 +187,22 @@ function BoardEditSection() {
       {/* Layout preview mini-grid */}
       {selectedBoard && layout && (
         <div
-          className="mb-3 h-16 rounded overflow-hidden border border-obd-dim/30"
-          style={{
-            display: 'grid',
-            gridTemplateColumns: `repeat(${layout.columns}, 1fr)`,
-            gridTemplateRows: `repeat(${layout.rows}, 1fr)`,
-            gap: '2px',
-          }}
+          className="mb-3 rounded overflow-hidden border border-obd-dim/30 relative"
+          style={{ aspectRatio: '16/9', maxHeight: '64px' }}
         >
-          {layout.cells.map((cell, i) => {
+          {layout.slots.map((cell, i) => {
             const slot = selectedBoard.panels[i];
             return (
               <div
                 key={i}
-                className={`rounded-sm flex items-center justify-center text-[9px] ${
+                className={`absolute rounded-sm flex items-center justify-center text-[9px] ${
                   slot ? 'bg-obd-primary/20 text-obd-primary' : 'bg-obd-dark/50 text-obd-dim'
                 }`}
                 style={{
-                  gridRow: `${cell.row + 1} / span ${cell.rowSpan ?? 1}`,
-                  gridColumn: `${cell.col + 1} / span ${cell.colSpan ?? 1}`,
+                  left: `${(cell.x / 64) * 100}%`,
+                  top: `${(cell.y / 36) * 100}%`,
+                  width: `${(cell.w / 64) * 100}%`,
+                  height: `${(cell.h / 36) * 100}%`,
                 }}
               >
                 {i}
@@ -218,9 +215,9 @@ function BoardEditSection() {
       {/* Panel slots */}
       {selectedBoard && layout && (
         <div className="space-y-1">
-          {layout.cells.map((cell, slotIndex) => {
+          {layout.slots.map((cell, slotIndex) => {
             const slot = selectedBoard.panels[slotIndex];
-            const span = `${cell.colSpan ?? 1}x${cell.rowSpan ?? 1}`;
+            const sizeLabel = `${cell.w}x${cell.h}`;
             const panelDef = slot ? panelDefs[slot.panelDefId] : null;
             const pidInfo = slot ? availablePids.find((p) => p.id === slot.pid) : null;
             const isEditing = editingSlot === slotIndex;
@@ -230,7 +227,7 @@ function BoardEditSection() {
                 {/* Slot row */}
                 <div className="flex items-center gap-2 bg-obd-dark rounded p-2">
                   <span className="text-xs text-obd-dim w-8">#{slotIndex}</span>
-                  <span className="text-xs text-obd-dim w-10">{span}</span>
+                  <span className="text-xs text-obd-dim w-16">{sizeLabel}</span>
                   {/* Display type */}
                   <select
                     value={slot?.panelDefId ?? ''}

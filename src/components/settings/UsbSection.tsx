@@ -74,11 +74,12 @@ function UsbSection() {
   const handleExport = async () => {
     setBusy(true);
     setMessage(null);
-    const { boards, currentBoardId, screenPadding } = useBoardStore.getState();
+    const { boards, layouts, currentBoardId, screenPadding } = useBoardStore.getState();
     const { currentThemeId } = useThemeStore.getState();
     const config = {
-      version: 1,
+      version: 2,
       boards,
+      layouts,
       currentBoardId,
       screenPadding,
       currentThemeId,
@@ -103,7 +104,7 @@ function UsbSection() {
     }
     try {
       const config = JSON.parse(result.data!);
-      if (config.version !== 1) {
+      if (config.version !== 1 && config.version !== 2) {
         setMessage('未対応の設定ファイルバージョンです');
         setBusy(false);
         return;
@@ -111,11 +112,16 @@ function UsbSection() {
       // Apply board config
       const boardStore = useBoardStore.getState();
       if (config.boards) {
-        useBoardStore.setState({
+        const updates: Record<string, unknown> = {
           boards: config.boards,
           currentBoardId: config.currentBoardId ?? boardStore.currentBoardId,
           screenPadding: config.screenPadding ?? boardStore.screenPadding,
-        });
+        };
+        // v2 includes layouts
+        if (config.version >= 2 && config.layouts) {
+          updates.layouts = config.layouts;
+        }
+        useBoardStore.setState(updates);
       }
       // Apply theme
       const themeStore = useThemeStore.getState();

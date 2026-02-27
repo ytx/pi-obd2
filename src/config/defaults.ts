@@ -1,4 +1,4 @@
-import { MeterConfig, GraphConfig, NumericConfig, PanelDef, Layout, Board } from '@/types';
+import { MeterConfig, GraphConfig, NumericConfig, PanelDef, Layout, LayoutSlot, Board } from '@/types';
 
 export const DEFAULT_METER_CONFIG: MeterConfig = {
   startAngle: 45,
@@ -46,109 +46,49 @@ export const DEFAULT_PANEL_DEFS: PanelDef[] = [
   { id: 'numeric-int', kind: 'numeric', config: { ...DEFAULT_NUMERIC_CONFIG, decimals: 0 } },
 ];
 
+// 64x36 grid layouts (16:9)
+const s = (x: number, y: number, w: number, h: number): LayoutSlot => ({ x, y, w, h });
+
 export const DEFAULT_LAYOUT: Layout = {
   id: 'default',
   name: 'Default',
-  columns: 4,
-  rows: 3,
-  gap: 4,
-  cells: [
-    { row: 0, col: 0, rowSpan: 2, colSpan: 2 }, // slot 0
-    { row: 0, col: 2, rowSpan: 2, colSpan: 2 }, // slot 1
-    { row: 2, col: 0, colSpan: 2 },              // slot 2
-    { row: 2, col: 2 },                           // slot 3
-    { row: 2, col: 3 },                           // slot 4
-  ],
+  slots: [s(0,0,32,24), s(32,0,32,24), s(0,24,32,12), s(32,24,16,12), s(48,24,16,12)],
 };
 
-// 1big + 4small + 1wide
 const DETAIL_LAYOUT: Layout = {
   id: 'detail',
   name: '1+4+Wide',
-  columns: 4,
-  rows: 3,
-  gap: 4,
-  cells: [
-    { row: 0, col: 0, rowSpan: 2, colSpan: 2 }, // slot 0: big
-    { row: 0, col: 2 },                           // slot 1
-    { row: 0, col: 3 },                           // slot 2
-    { row: 1, col: 2 },                           // slot 3
-    { row: 1, col: 3 },                           // slot 4
-    { row: 2, col: 0, colSpan: 4 },              // slot 5: wide
-  ],
+  slots: [s(0,0,32,24), s(32,0,16,12), s(48,0,16,12), s(32,12,16,12), s(48,12,16,12), s(0,24,64,12)],
 };
 
-// 2x2 grid (4 equal panels)
 const QUAD_LAYOUT: Layout = {
   id: 'quad',
   name: '2x2',
-  columns: 2,
-  rows: 2,
-  gap: 4,
-  cells: [
-    { row: 0, col: 0 },
-    { row: 0, col: 1 },
-    { row: 1, col: 0 },
-    { row: 1, col: 1 },
-  ],
+  slots: [s(0,0,32,18), s(32,0,32,18), s(0,18,32,18), s(32,18,32,18)],
 };
 
-// 1big + 3small
 const BIG1_LAYOUT: Layout = {
   id: 'big1',
   name: '1+3',
-  columns: 4,
-  rows: 2,
-  gap: 4,
-  cells: [
-    { row: 0, col: 0, rowSpan: 2, colSpan: 2 }, // slot 0: big
-    { row: 0, col: 2, colSpan: 2 },              // slot 1
-    { row: 1, col: 2 },                           // slot 2
-    { row: 1, col: 3 },                           // slot 3
-  ],
+  slots: [s(0,0,32,36), s(32,0,32,18), s(32,18,16,18), s(48,18,16,18)],
 };
 
-// 3x2 grid (6 equal panels)
 const GRID6_LAYOUT: Layout = {
   id: 'grid6',
   name: '3x2',
-  columns: 3,
-  rows: 2,
-  gap: 4,
-  cells: [
-    { row: 0, col: 0 },
-    { row: 0, col: 1 },
-    { row: 0, col: 2 },
-    { row: 1, col: 0 },
-    { row: 1, col: 1 },
-    { row: 1, col: 2 },
-  ],
+  slots: [s(0,0,21,18), s(21,0,22,18), s(43,0,21,18), s(0,18,21,18), s(21,18,22,18), s(43,18,21,18)],
 };
 
-// 1wide top + 4 bottom
 const WIDE_TOP_LAYOUT: Layout = {
   id: 'wide-top',
   name: 'Wide+4',
-  columns: 4,
-  rows: 3,
-  gap: 4,
-  cells: [
-    { row: 0, col: 0, colSpan: 4 },              // slot 0: wide
-    { row: 1, col: 0, rowSpan: 2, colSpan: 2 },  // slot 1: big
-    { row: 1, col: 2, rowSpan: 2, colSpan: 2 },  // slot 2: big
-  ],
+  slots: [s(0,0,64,12), s(0,12,32,24), s(32,12,32,24)],
 };
 
-// Single full-screen panel
 const SINGLE_LAYOUT: Layout = {
   id: 'single',
   name: 'Single',
-  columns: 1,
-  rows: 1,
-  gap: 0,
-  cells: [
-    { row: 0, col: 0 },
-  ],
+  slots: [s(0,0,64,36)],
 };
 
 export const DEFAULT_LAYOUTS: Layout[] = [
