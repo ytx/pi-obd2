@@ -39,8 +39,8 @@ export function renderMeter(params: MeterRenderParams): void {
   // startAngle/stopAngle = exclusion angles from bottom (degrees)
   const sweepDeg = 360 - config.startAngle - config.stopAngle;
   const sweepRad = (sweepDeg * Math.PI) / 180;
-  // Arc starts from bottom + stopAngle (clockwise from left side)
-  const arcStartRad = Math.PI / 2 + (config.stopAngle * Math.PI) / 180;
+  // Arc starts from bottom + startAngle (clockwise from left side)
+  const arcStartRad = Math.PI / 2 + (config.startAngle * Math.PI) / 180;
 
   // Value position in arc (0-1)
   const clamped = Math.max(min, Math.min(max, value));
@@ -93,40 +93,57 @@ export function renderMeter(params: MeterRenderParams): void {
     }
   }
 
-  // Draw needle
+  // Draw needle or arc depending on meterType
   const needleAngle = arcStartRad + ratio * sweepRad;
 
-  if (needleImage) {
-    // Needle image: 480x480, needle pointing at 12 o'clock (up = -π/2).
-    // Rotate from 12 o'clock base to target angle: needleAngle - (-π/2) = needleAngle + π/2
-    const imgSize = size;
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(needleAngle + Math.PI / 2);
-    ctx.drawImage(needleImage, -imgSize / 2, -imgSize / 2, imgSize, imgSize);
-    ctx.restore();
+  if (config.meterType === 'arc') {
+    // Arc mode: draw value arc (progress ring) only, no needle
+    if (config.arcInnerRadius > 0 && config.arcOuterRadius > 0 && ratio > 0) {
+      const innerR = radius * config.arcInnerRadius;
+      const outerR = radius * config.arcOuterRadius;
+      const arcEnd = arcStartRad + ratio * sweepRad;
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, outerR, arcStartRad, arcEnd);
+      ctx.arc(cx, cy, innerR, arcEnd, arcStartRad, true);
+      ctx.closePath();
+      ctx.fillStyle = config.arcColor;
+      ctx.fill();
+    }
   } else {
-    // Fallback: draw triangle needle
-    const needleLen = radius * config.needleLength;
-    const needleWidth = size * config.needleSizeRatio;
+    // Needle mode
+    if (needleImage) {
+      // Needle image: 480x480, needle pointing at 12 o'clock (up = -π/2).
+      // Rotate from 12 o'clock base to target angle: needleAngle - (-π/2) = needleAngle + π/2
+      const imgSize = size;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(needleAngle + Math.PI / 2);
+      ctx.drawImage(needleImage, -imgSize / 2, -imgSize / 2, imgSize, imgSize);
+      ctx.restore();
+    } else {
+      // Fallback: draw triangle needle
+      const needleLen = radius * config.needleLength;
+      const needleWidth = size * config.needleSizeRatio;
 
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(needleAngle);
-    ctx.beginPath();
-    ctx.moveTo(needleLen, 0);
-    ctx.lineTo(-needleWidth * 2, -needleWidth);
-    ctx.lineTo(-needleWidth * 2, needleWidth);
-    ctx.closePath();
-    ctx.fillStyle = config.needleColor;
-    ctx.fill();
-    ctx.restore();
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(needleAngle);
+      ctx.beginPath();
+      ctx.moveTo(needleLen, 0);
+      ctx.lineTo(-needleWidth * 2, -needleWidth);
+      ctx.lineTo(-needleWidth * 2, needleWidth);
+      ctx.closePath();
+      ctx.fillStyle = config.needleColor;
+      ctx.fill();
+      ctx.restore();
 
-    // Center dot (only for fallback triangle needle)
-    ctx.beginPath();
-    ctx.arc(cx, cy, size * 0.03, 0, Math.PI * 2);
-    ctx.fillStyle = config.needleColor;
-    ctx.fill();
+      // Center dot (only for fallback triangle needle)
+      ctx.beginPath();
+      ctx.arc(cx, cy, size * 0.03, 0, Math.PI * 2);
+      ctx.fillStyle = config.needleColor;
+      ctx.fill();
+    }
   }
 
   // Draw title
@@ -138,7 +155,7 @@ export function renderMeter(params: MeterRenderParams): void {
 
   // Draw value (monospaced digits to prevent jitter with proportional fonts)
   ctx.fillStyle = config.valueColor;
-  ctx.font = `bold ${Math.round(size * 0.12 * config.fontScale)}px ${font}`;
+  ctx.font = `bold ${Math.round(size * 0.12 * config.fontScale * config.valueFontScale)}px ${font}`;
   const valueText = decimals !== undefined ? clamped.toFixed(decimals) : String(Math.round(clamped));
   ctx.textBaseline = 'middle';
   fillTextMono(ctx, valueText, cx, cy + radius * config.valueOffset, 'center');

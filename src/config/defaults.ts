@@ -1,12 +1,16 @@
 import { MeterConfig, GraphConfig, NumericConfig, PanelDef, Layout, LayoutSlot, Board } from '@/types';
 
 export const DEFAULT_METER_CONFIG: MeterConfig = {
+  meterType: 'needle',
   startAngle: 45,
   stopAngle: 45,
   tickCount: 20,
   tickInnerRadius: 0.78,
   tickOuterRadius: 0.90,
   tickColor: '#4a4a6a',
+  arcInnerRadius: 0,
+  arcOuterRadius: 0,
+  arcColor: '#ff2e63',
   needleColor: '#ff2e63',
   needleLength: 0.72,
   needleSizeRatio: 0.03,
@@ -18,7 +22,16 @@ export const DEFAULT_METER_CONFIG: MeterConfig = {
   unitOffset: 0.30,
   scaleTextRadius: 0.75,
   fontScale: 1.0,
+  valueFontScale: 1.0,
   hideTicks: false,
+};
+
+export const DEFAULT_METER_ARC_CONFIG: MeterConfig = {
+  ...DEFAULT_METER_CONFIG,
+  meterType: 'arc',
+  arcInnerRadius: 0.55,
+  arcOuterRadius: 0.65,
+  needleLength: 0,
 };
 
 export const DEFAULT_GRAPH_CONFIG: GraphConfig = {
@@ -41,6 +54,7 @@ export const DEFAULT_NUMERIC_CONFIG: NumericConfig = {
 // Display templates (kind + config, no PID)
 export const DEFAULT_PANEL_DEFS: PanelDef[] = [
   { id: 'meter', kind: 'meter', config: { ...DEFAULT_METER_CONFIG } },
+  { id: 'meter-arc', kind: 'meter', config: { ...DEFAULT_METER_ARC_CONFIG } },
   { id: 'graph', kind: 'graph', config: { ...DEFAULT_GRAPH_CONFIG } },
   { id: 'numeric', kind: 'numeric', config: { ...DEFAULT_NUMERIC_CONFIG } },
   { id: 'numeric-int', kind: 'numeric', config: { ...DEFAULT_NUMERIC_CONFIG, decimals: 0 } },

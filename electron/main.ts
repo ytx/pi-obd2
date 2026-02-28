@@ -550,6 +550,31 @@ function registerIpcHandlers(): void {
     }
   });
 
+  ipcMain.handle('theme-read-file', (_event, filePath: string, mimeType: string) => {
+    try {
+      const data = fs.readFileSync(filePath);
+      if (mimeType === 'font') return data.toString('base64');
+      return `data:${mimeType};base64,${data.toString('base64')}`;
+    } catch (err) {
+      logger.error('theme-editor', `Read file failed: ${err}`);
+      return null;
+    }
+  });
+
+  ipcMain.handle('theme-write-asset', (_event, themeId: string, assetName: string, base64Data: string) => {
+    try {
+      const themeDir = resolveThemeDir(themeId, getUsbThemeDirs());
+      if (!themeDir) return { success: false, error: 'Theme not found' };
+      const raw = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+      fs.writeFileSync(path.join(themeDir, assetName), Buffer.from(raw, 'base64'));
+      logger.info('theme-editor', `Wrote asset ${assetName} to ${themeId}`);
+      return { success: true };
+    } catch (err) {
+      logger.error('theme-editor', `Write asset failed: ${err}`);
+      return { success: false, error: String(err) };
+    }
+  });
+
   ipcMain.handle('theme-pick-file', async (_event, filters: { name: string; extensions: string[] }[]) => {
     if (!mainWindow) return { success: false, error: 'No window' };
     const result = await dialog.showOpenDialog(mainWindow, {

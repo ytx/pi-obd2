@@ -2,14 +2,15 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { ThemeInfo, ThemeData, MeterConfig, NumericConfig, GraphConfig } from '@/types';
 import { parseTheme } from '@/canvas/theme-parser';
-import { DEFAULT_METER_CONFIG, DEFAULT_NUMERIC_CONFIG, DEFAULT_GRAPH_CONFIG } from '@/config/defaults';
+import { DEFAULT_METER_CONFIG, DEFAULT_METER_ARC_CONFIG, DEFAULT_NUMERIC_CONFIG, DEFAULT_GRAPH_CONFIG } from '@/config/defaults';
 
 interface ThemeState {
   availableThemes: ThemeInfo[];
   currentThemeId: string | null;
   currentThemeData: ThemeData | null;
   // Parsed configs from theme
-  themeMeterConfig: MeterConfig;
+  themeMeterNeedleConfig: MeterConfig;
+  themeMeterArcConfig: MeterConfig;
   themeNumericConfig: NumericConfig;
   themeGraphConfig: GraphConfig;
   // Theme assets (data URLs)
@@ -30,7 +31,8 @@ export const useThemeStore = create<ThemeState>()(
   availableThemes: [],
   currentThemeId: null,
   currentThemeData: null,
-  themeMeterConfig: DEFAULT_METER_CONFIG,
+  themeMeterNeedleConfig: DEFAULT_METER_CONFIG,
+  themeMeterArcConfig: DEFAULT_METER_ARC_CONFIG,
   themeNumericConfig: DEFAULT_NUMERIC_CONFIG,
   themeGraphConfig: DEFAULT_GRAPH_CONFIG,
   dialBackgroundUrl: null,
@@ -56,7 +58,8 @@ export const useThemeStore = create<ThemeState>()(
     set({
       currentThemeId: data.info.id,
       currentThemeData: data,
-      themeMeterConfig: parsed.meterConfig,
+      themeMeterNeedleConfig: parsed.meterNeedleConfig,
+      themeMeterArcConfig: parsed.meterArcConfig,
       themeNumericConfig: parsed.numericConfig,
       themeGraphConfig: parsed.graphConfig,
       dialBackgroundUrl: data.assets.dialBackground ?? null,
@@ -85,7 +88,8 @@ export const useThemeStore = create<ThemeState>()(
     set({
       currentThemeId: null,
       currentThemeData: null,
-      themeMeterConfig: DEFAULT_METER_CONFIG,
+      themeMeterNeedleConfig: DEFAULT_METER_CONFIG,
+      themeMeterArcConfig: DEFAULT_METER_ARC_CONFIG,
       themeNumericConfig: DEFAULT_NUMERIC_CONFIG,
       themeGraphConfig: DEFAULT_GRAPH_CONFIG,
       dialBackgroundUrl: null,

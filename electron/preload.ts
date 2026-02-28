@@ -75,6 +75,10 @@ const obd2API = {
     ipcRenderer.invoke('theme-rename', themeId, newName),
   themeSaveProperties: (themeId: string, properties: Record<string, string>): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('theme-save-properties', themeId, properties),
+  themeReadFile: (filePath: string, mimeType: string): Promise<string | null> =>
+    ipcRenderer.invoke('theme-read-file', filePath, mimeType),
+  themeWriteAsset: (themeId: string, assetName: string, base64Data: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('theme-write-asset', themeId, assetName, base64Data),
   themePickFile: (filters: Array<{ name: string; extensions: string[] }>): Promise<{ success: boolean; filePath?: string; canceled?: boolean }> =>
     ipcRenderer.invoke('theme-pick-file', filters),
   themeCopyAsset: (themeId: string, sourcePath: string, assetName: string): Promise<{ success: boolean; error?: string }> =>

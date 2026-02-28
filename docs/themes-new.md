@@ -61,8 +61,8 @@ PID キーの `<pid>` は OBD PID バイトの**小文字 hex**（モードバ�
 | Global キー | PID キー | 型 | デフォルト | 説明 |
 |---|---|---|---|---|
 | `globalTextRadius` | `textRadius_<pid>` | float | 0.85 | スケール数値の配置半径 |
-| `dialTickInnerRadius` | — | float | 1.50 | 目盛り線の内径 |
-| `dialTickOuterRadius` | — | float | 1.55 | 目盛り線の外径 |
+| `dialTickInnerRadius` | — | float | 1.50 | バリューアーク内径（min→現在値の円弧） |
+| `dialTickOuterRadius` | — | float | 1.55 | バリューアーク外径（min→現在値の円弧） |
 | `dialNeedleLength` | — | float | 1.20 | 針の長さ |
 | `dialNeedleSizeRatio` | — | float | 0.03 | 針の太さ比率 |
 | `dialMeterValueOuterRadius` | — | float | 1.0 | Meter 型インジケータ半径 |
@@ -202,6 +202,7 @@ OBD PID (本アプリ内部)  →  Torque PID キー
 - 色プロパティ（`#RRGGBB` / `#AARRGGBB` 変換）
 - グラフ線色（Global + PID オーバーライド）
 - フォント（`font.ttf`、`globalFontScale`）
+- バリューアーク（`dialTickInnerRadius` / `dialTickOuterRadius` → min〜現在値の円弧描画、色は `displayIndicatorColour`）
 - 目盛り表示/非表示（Global + PID）
 - テキストオフセット（Needle 型）
 - 背景画像（全体 / メーター / 数値・グラフ）
@@ -216,7 +217,7 @@ OBD PID (本アプリ内部)  →  Torque PID キー
 | PID 別針画像 | 中 | `needle_<pid>.png` |
 | `valueFont.ttf` | 中 | 値表示専用フォント |
 | `dialNeedleValueFontScale` | 低 | Needle 型値フォント倍率 |
-| Meter 型ゲージ | 低 | 円弧インジケータ（別レンダラ必要） |
+| `dialMeterValueThickness` | 低 | Meter 型円弧太さ倍率 |
 | `globalTitleTextCurved` | 低 | タイトル曲線配置 |
 | `dialNeedleOffset` | 低 | 針ピボット微調整 |
 | `dialTickStyle` / `dialStepsDivisor` | 低 | 目盛りスタイルバリエーション |

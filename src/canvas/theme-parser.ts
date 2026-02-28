@@ -1,5 +1,5 @@
-import { MeterConfig, NumericConfig, GraphConfig } from '@/types';
-import { DEFAULT_METER_CONFIG, DEFAULT_NUMERIC_CONFIG, DEFAULT_GRAPH_CONFIG } from '@/config/defaults';
+import { MeterConfig, MeterType, NumericConfig, GraphConfig } from '@/types';
+import { DEFAULT_METER_CONFIG, DEFAULT_METER_ARC_CONFIG, DEFAULT_NUMERIC_CONFIG, DEFAULT_GRAPH_CONFIG } from '@/config/defaults';
 
 export interface ThemeProperties {
   [key: string]: string;
@@ -13,7 +13,8 @@ export interface ThemeAssets {
 }
 
 export interface ParsedTheme {
-  meterConfig: MeterConfig;
+  meterNeedleConfig: MeterConfig;
+  meterArcConfig: MeterConfig;
   numericConfig: NumericConfig;
   graphConfig: GraphConfig;
   assets: ThemeAssets;
@@ -67,8 +68,9 @@ export function toTorquePid(pid: string): string {
 export function propertiesToMeterConfig(
   props: ThemeProperties,
   pid?: string,
+  meterType: MeterType = 'needle',
 ): MeterConfig {
-  const d = DEFAULT_METER_CONFIG;
+  const d = meterType === 'arc' ? DEFAULT_METER_ARC_CONFIG : DEFAULT_METER_CONFIG;
 
   // Angles - PID-specific overrides (Torque uses lowercase hex PID byte, e.g. '0c')
   const tpid = pid ? toTorquePid(pid) : undefined;
@@ -83,7 +85,7 @@ export function propertiesToMeterConfig(
     d.stopAngle,
   );
 
-  // Ticks
+  // Ticks - dialTickInnerRadius/OuterRadius → tick position
   const hideKey = tpid ? `hideTicks_${tpid}` : undefined;
   const hideTicks = parseBool(
     (hideKey && props[hideKey]) || props.globalHideTicks,
@@ -96,27 +98,54 @@ export function propertiesToMeterConfig(
   const titleColor = parseColor(props.displayTextTitleColour) ?? d.textColor;
   const indicatorColor = parseColor(props.displayIndicatorColour);
 
+  // Arc (dialMeter): dialMeterValueOuterRadius/Thickness → arcInnerRadius/arcOuterRadius
+  const arcOuterRadius = torqueRadius(props.dialMeterValueOuterRadius, d.arcOuterRadius);
+  const arcThicknessRaw = parseFloat0(props.dialMeterValueThickness, 0);
+  const arcThickness = arcThicknessRaw > 0 ? arcThicknessRaw * TORQUE_RADIUS_SCALE : (d.arcOuterRadius - d.arcInnerRadius);
+  const arcInnerRadius = arcOuterRadius - arcThickness;
+
+  // Text offsets: switch by meterType
+  const titleOffset = meterType === 'arc'
+    ? parseFloat0(props.dialMeterTitleTextOffset, d.titleOffset)
+    : parseFloat0(props.dialNeedleTitleTextOffset, d.titleOffset);
+  const valueOffset = meterType === 'arc'
+    ? parseFloat0(props.dialMeterValueTextOffset, d.valueOffset)
+    : parseFloat0(props.dialNeedleValueTextOffset, d.valueOffset);
+  const unitOffset = meterType === 'arc'
+    ? parseFloat0(props.dialMeterUnitTextOffset, d.unitOffset)
+    : parseFloat0(props.dialNeedleUnitTextOffset, d.unitOffset);
+
+  // valueFontScale: switch by meterType
+  const valueFontScale = meterType === 'arc'
+    ? parseFloat0(props.dialMeterValueFontScale, d.valueFontScale)
+    : parseFloat0(props.dialNeedleValueFontScale, d.valueFontScale);
+
   return {
+    meterType,
     startAngle,
     stopAngle,
     tickCount: d.tickCount,
     tickInnerRadius: torqueRadius(props.dialTickInnerRadius, d.tickInnerRadius),
     tickOuterRadius: torqueRadius(props.dialTickOuterRadius, d.tickOuterRadius),
     tickColor,
+    arcInnerRadius,
+    arcOuterRadius,
+    arcColor: indicatorColor ?? tickColor,
     needleColor: indicatorColor ?? needleColor,
     needleLength: torqueRadius(props.dialNeedleLength, d.needleLength),
     needleSizeRatio: parseFloat0(props.dialNeedleSizeRatio, d.needleSizeRatio),
     textColor: titleColor,
     valueColor,
     unitColor: parseColor(props.displayTextTitleColour) ?? d.unitColor,
-    titleOffset: parseFloat0(props.dialNeedleTitleTextOffset, d.titleOffset),
-    valueOffset: parseFloat0(props.dialNeedleValueTextOffset, d.valueOffset),
-    unitOffset: parseFloat0(props.dialNeedleUnitTextOffset, d.unitOffset),
+    titleOffset,
+    valueOffset,
+    unitOffset,
     scaleTextRadius: torqueRadius(
       (tpid && props[`textRadius_${tpid}`]) || props.globalTextRadius,
       d.scaleTextRadius,
     ),
     fontScale: parseFloat0(props.globalFontScale, d.fontScale),
+    valueFontScale,
     hideTicks,
   };
 }
@@ -166,7 +195,8 @@ export function propertiesToGraphConfig(props: ThemeProperties, pid?: string): G
 /** Parse full theme from properties + assets */
 export function parseTheme(props: ThemeProperties, assets: ThemeAssets): ParsedTheme {
   return {
-    meterConfig: propertiesToMeterConfig(props),
+    meterNeedleConfig: propertiesToMeterConfig(props, undefined, 'needle'),
+    meterArcConfig: propertiesToMeterConfig(props, undefined, 'arc'),
     numericConfig: propertiesToNumericConfig(props),
     graphConfig: propertiesToGraphConfig(props),
     assets,

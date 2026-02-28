@@ -49,6 +49,8 @@ declare global {
       themeDelete: (themeId: string) => Promise<{ success: boolean; error?: string }>;
       themeRename: (themeId: string, newName: string) => Promise<{ success: boolean; error?: string }>;
       themeSaveProperties: (themeId: string, properties: Record<string, string>) => Promise<{ success: boolean; error?: string }>;
+      themeReadFile: (filePath: string, mimeType: string) => Promise<string | null>;
+      themeWriteAsset: (themeId: string, assetName: string, base64Data: string) => Promise<{ success: boolean; error?: string }>;
       themePickFile: (filters: Array<{ name: string; extensions: string[] }>) => Promise<{ success: boolean; filePath?: string; canceled?: boolean }>;
       themeCopyAsset: (themeId: string, sourcePath: string, assetName: string) => Promise<{ success: boolean; error?: string }>;
       themeDeleteAsset: (themeId: string, assetName: string) => Promise<{ success: boolean; error?: string }>;

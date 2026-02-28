@@ -68,7 +68,7 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 - `canvas/meter-renderer.ts` - メーター Canvas 描画（純粋関数）
 - `canvas/graph-renderer.ts` - グラフ Canvas 描画（純粋関数）
 - `canvas/time-buffer.ts` - 時系列循環バッファ（maxSize=300、PID 別共有バッファ）
-- `canvas/theme-parser.ts` - Torque properties → MeterConfig/NumericConfig/GraphConfig 変換
+- `canvas/theme-parser.ts` - Torque properties → MeterConfig(needle/arc)/NumericConfig/GraphConfig 変換
 - `canvas/mono-text.ts` - Canvas 等幅数字描画ヘルパー
 - `stores/useAppStore.ts` - アプリ状態（画面、ホスト名、システム情報）
 - `stores/useOBDStore.ts` - OBD2 データ状態（接続、値、PID 情報）
@@ -87,8 +87,10 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 - **LayoutSlot** - スロット位置・サイズ（`x`, `y`, `w`, `h` — 64x36 グリッド座標）
 - **PanelDef** - パネル定義（`id`, `kind`, `config` — PID 非依存の表示テンプレート）
 - **PanelKind** - `'numeric' | 'meter' | 'graph'`
+- **MeterType** - `'needle' | 'arc'`（MeterConfig 内で指定）
 
 データソース（PID）と表示形式（PanelDef）は分離されており、任意の組み合わせが可能。
+メーターは2種類: needle（回転針）と arc（プログレスリング）。PanelDef `meter` = needle、`meter-arc` = arc。
 
 ### レイアウトシステム
 
@@ -187,28 +189,35 @@ themes/<theme-name>/
 **properties.txt の主要プロパティ (実データ確認済み):**
 - `globalDialStartAngle` / `globalDialStopAngle` - 6時方向基準の除外角度
 - `dialStartAngle_<pid>` / `dialStopAngle_<pid>` - PID別角度オーバーライド
-- `dialTickInnerRadius` / `dialTickOuterRadius` - 目盛り線の内径/外径 (倍率)
+- `dialTickInnerRadius` / `dialTickOuterRadius` - 目盛り線の内径/外径 (倍率、ティック位置)
 - `dialNeedleLength` / `dialNeedleSizeRatio` / `dialNeedleColour` - 針の長さ/太さ/色
-- `globalFontScale` / `dialMeterValueFontScale` / `dialNeedleValueFontScale` - フォントサイズ
+- `dialNeedleValueFontScale` - needle メーターの値フォントスケール
+- `dialNeedleTitleTextOffset` / `dialNeedleValueTextOffset` / `dialNeedleUnitTextOffset` - needle テキスト位置オフセット
+- `dialMeterValueOuterRadius` / `dialMeterValueThickness` - arc メーターのバリューアーク外径/太さ
+- `dialMeterValueFontScale` - arc メーターの値フォントスケール
+- `dialMeterTitleTextOffset` / `dialMeterValueTextOffset` / `dialMeterUnitTextOffset` - arc テキスト位置オフセット
+- `globalFontScale` - 全体フォントスケール
 - `globalTextRadius` - スケール数値の配置半径 (倍率)
 - `globalHideTicks` / `hideTicks_<pid>` - 目盛り非表示フラグ
 - `displayTextValueColour` / `displayTextTitleColour` - テキスト色 (#RRGGBB or #AARRGGBB)
 - `displayTickColour` / `displayIndicatorColour` - 目盛り/インジケータ色
 - `graphLineColour` - グラフ線色（なければ `displayTextValueColour` にフォールバック）
-- `dialNeedleTitleTextOffset` / `dialNeedleValueTextOffset` / `dialNeedleUnitTextOffset` - テキスト位置オフセット
 
 **テーマ適用範囲:**
-- メーター: 背景画像、角度、目盛り、針、テキスト色・位置、フォント
+- メーター (needle): 背景画像、角度、目盛り、針、テキスト色・位置、フォント
+- メーター (arc): 背景画像、角度、目盛り、バリューアーク（プログレスリング）、テキスト色・位置、フォント
 - 数値パネル: 背景画像、テキスト色、フォント
 - グラフ: 背景画像（`display_background.png`）、線色・塗り色（`graphLineColour` → `displayTextValueColour` → デフォルト）、テキスト色
 - ダッシュボード: 全体背景画像
 
-**Canvas レイヤー合成順:**
+**Canvas レイヤー合成順 (meter-renderer.ts):**
 1. `dial_background.png` (480x480 をパネルサイズにスケーリング)
 2. 目盛り線 (テーマ背景がある場合はスキップ — 背景画像に含まれるため)
 3. スケール数値 (min〜max, textRadius に沿って配置 — 常に表示)
-4. 針 (`needle.png` がある場合は画像を回転描画、なければ三角形で描画)
-5. テキスト (タイトル、値、単位 - オフセット付き)
+4. meterType 分岐:
+   - **needle**: 針 (`needle.png` がある場合は画像を回転描画、なければ三角形 + 中心ドット)
+   - **arc**: バリューアーク（arcInnerRadius〜arcOuterRadius 間の円弧塗りつぶし）
+5. テキスト (タイトル、値（valueFontScale 適用）、単位 - オフセット付き)
 
 **針画像 (needle.png):**
 - 480x480 RGBA、12時方向（上向き）に針を描画した画像
@@ -257,8 +266,8 @@ themes/<theme-name>/
 - Refresh ボタンでデバイス再スキャン
 
 **テーマエディタ画面:**
-- 左半分: プレビュー（テーマ選択、PID/パネル種別切替、Canvas プレビュー、値スライダー、テーマ CRUD）
-- 右半分: プロパティエディタ（角度・半径・色・フォント・目盛り・テキストオフセット）+ アセット管理
+- 左半分: プレビュー（テーマ選択、PID/パネル種別切替（Meter Needle/Arc/Graph/Numeric）、Canvas プレビュー、値スライダー、テーマ CRUD）
+- 右半分: プロパティエディタ（角度・ティック・スケールテキスト・Needle・Arc・色・フォント）+ アセット管理
 - プレビューは `renderMeter()` / `renderGraph()` を直接呼び出し、`useThemeStore` を使わない
 - エディタ専用フォント `ThemeEditorFont` でダッシュボードの `TorqueThemeFont` と共存
 - PID 選択時は PID 別プロパティを表示、未設定なら Global 値をプレースホルダー表示
@@ -443,7 +452,7 @@ npm run electron -- --window-size=1024,576
 - preload で contextBridge を使用し、renderer から Node.js API を直接使用しない
 - センサー追加を考慮し、データソースを抽象化（現時点は OBD2 のみ）
 - Canvas 描画は純粋関数（`renderMeter()`, `renderGraph()`）、コンポーネントから分離
-- テーマ設定は parser で変換し、各コンポーネントで `currentThemeId ? themeConfig : defaultConfig` で切替
+- テーマ設定は parser で変換し、`useThemeStore` に `themeMeterNeedleConfig` / `themeMeterArcConfig` の2種類を保持。MeterPanel は `config.meterType` で切替
 - BoardView の CSS Grid セルは `key={boardId-layoutId-index}` でボード/レイアウト切替時に DOM を再生成（`key={i}` だと前レイアウトの gridRow/gridColumn スタイルが残るバグ）
 - `bluetoothctl` はインタラクティブシェルなので `stdio: 'ignore'` で spawn すると即終了する。stdin を pipe で開き、コマンドを書き込む方式にすること
 - `/boot/firmware/config/save.sh` や `rfcomm bind`、`mount` など root 権限が必要な操作は `sudo` 付きで `execSync` する
@@ -467,7 +476,8 @@ npm run electron -- --window-size=1024,576
 
 **対象プロパティ:**
 - `globalTextRadius` — 目盛り数値の配置半径（red-sport: 0.85 → 0.55 で合う）
-- `dialTickInnerRadius` / `dialTickOuterRadius` — 目盛り線の内径/外径（red-sport: 1.50/1.55）
+- `dialTickInnerRadius` / `dialTickOuterRadius` — ティック位置の内径/外径（red-sport: 1.50/1.55）
+- `dialMeterValueOuterRadius` / `dialMeterValueThickness` — arc メーターのバリューアーク
 - `dialNeedleLength` — 針の長さ（red-sport: 1.20）
 
 **未対応:**

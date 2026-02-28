@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useAppStore } from '@/stores/useAppStore';
-import { ThemeInfo, ThemeAssets, PanelKind } from '@/types';
+import { ThemeInfo, ThemeAssets, PanelKind, MeterType } from '@/types';
 import { propertiesToMeterConfig, propertiesToNumericConfig, propertiesToGraphConfig, toTorquePid } from '@/canvas/theme-parser';
 import { renderMeter } from '@/canvas/meter-renderer';
 import { renderGraph } from '@/canvas/graph-renderer';
@@ -34,31 +34,40 @@ const PROPERTY_GROUPS: PropertyGroup[] = [
     { key: 'globalDialStartAngle', label: 'Start Angle', type: 'number', min: 0, max: 180, pidSpecific: true, pidKeyTemplate: 'dialStartAngle_${pid}' },
     { key: 'globalDialStopAngle', label: 'Stop Angle', type: 'number', min: 0, max: 180, pidSpecific: true, pidKeyTemplate: 'dialStopAngle_${pid}' },
   ]},
-  { name: 'Radii', properties: [
+  { name: 'Ticks', properties: [
+    { key: 'globalHideTicks', label: 'Hide', type: 'boolean', pidSpecific: true, pidKeyTemplate: 'hideTicks_${pid}' },
+    { key: 'dialTickInnerRadius', label: 'Inner R', type: 'number', min: 0, max: 3, step: 0.05 },
+    { key: 'dialTickOuterRadius', label: 'Outer R', type: 'number', min: 0, max: 3, step: 0.05 },
+  ]},
+  { name: 'Scale Text', properties: [
     { key: 'globalTextRadius', label: 'Text Radius', type: 'number', min: 0, max: 2, step: 0.05, pidSpecific: true, pidKeyTemplate: 'textRadius_${pid}' },
-    { key: 'dialTickInnerRadius', label: 'Tick Inner', type: 'number', min: 0, max: 3, step: 0.05 },
-    { key: 'dialTickOuterRadius', label: 'Tick Outer', type: 'number', min: 0, max: 3, step: 0.05 },
-    { key: 'dialNeedleLength', label: 'Needle Length', type: 'number', min: 0, max: 3, step: 0.05 },
-    { key: 'dialNeedleSizeRatio', label: 'Needle Width', type: 'number', min: 0.01, max: 0.2, step: 0.005 },
+  ]},
+  { name: 'Needle (dialNeedle)', properties: [
+    { key: 'dialNeedleLength', label: 'Length', type: 'number', min: 0, max: 3, step: 0.05 },
+    { key: 'dialNeedleSizeRatio', label: 'Width', type: 'number', min: 0.01, max: 0.2, step: 0.005 },
+    { key: 'dialNeedleColour', label: 'Color', type: 'color' },
+    { key: 'dialNeedleValueFontScale', label: 'Value Font', type: 'number', min: 0.3, max: 3, step: 0.1 },
+    { key: 'dialNeedleTitleTextOffset', label: 'Title Offset', type: 'number', min: -1, max: 1, step: 0.05 },
+    { key: 'dialNeedleValueTextOffset', label: 'Value Offset', type: 'number', min: -1, max: 1, step: 0.05 },
+    { key: 'dialNeedleUnitTextOffset', label: 'Unit Offset', type: 'number', min: -1, max: 1, step: 0.05 },
+  ]},
+  { name: 'Arc (dialMeter)', properties: [
+    { key: 'dialMeterValueOuterRadius', label: 'Outer R', type: 'number', min: 0, max: 3, step: 0.05 },
+    { key: 'dialMeterValueThickness', label: 'Thickness', type: 'number', min: 0, max: 2, step: 0.05 },
+    { key: 'dialMeterValueFontScale', label: 'Value Font', type: 'number', min: 0.3, max: 3, step: 0.1 },
+    { key: 'dialMeterTitleTextOffset', label: 'Title Offset', type: 'number', min: -1, max: 1, step: 0.05 },
+    { key: 'dialMeterValueTextOffset', label: 'Value Offset', type: 'number', min: -1, max: 1, step: 0.05 },
+    { key: 'dialMeterUnitTextOffset', label: 'Unit Offset', type: 'number', min: -1, max: 1, step: 0.05 },
   ]},
   { name: 'Colors', properties: [
     { key: 'displayTextValueColour', label: 'Value', type: 'color' },
     { key: 'displayTextTitleColour', label: 'Title', type: 'color' },
     { key: 'displayTickColour', label: 'Tick', type: 'color' },
     { key: 'displayIndicatorColour', label: 'Indicator', type: 'color' },
-    { key: 'dialNeedleColour', label: 'Needle', type: 'color' },
     { key: 'graphLineColour', label: 'Graph Line', type: 'color', pidSpecific: true, pidKeyTemplate: 'graphLineColour_${pid}' },
   ]},
   { name: 'Font', properties: [
     { key: 'globalFontScale', label: 'Scale', type: 'number', min: 0.3, max: 2, step: 0.1 },
-  ]},
-  { name: 'Ticks', properties: [
-    { key: 'globalHideTicks', label: 'Hide', type: 'boolean', pidSpecific: true, pidKeyTemplate: 'hideTicks_${pid}' },
-  ]},
-  { name: 'Text Offsets', properties: [
-    { key: 'dialNeedleTitleTextOffset', label: 'Title', type: 'number', min: -1, max: 1, step: 0.05 },
-    { key: 'dialNeedleValueTextOffset', label: 'Value', type: 'number', min: -1, max: 1, step: 0.05 },
-    { key: 'dialNeedleUnitTextOffset', label: 'Unit', type: 'number', min: -1, max: 1, step: 0.05 },
   ]},
 ];
 
@@ -67,16 +76,17 @@ const PROPERTY_GROUPS: PropertyGroup[] = [
 interface AssetDef {
   name: string;
   label: string;
+  mime: string;
   filters: { name: string; extensions: string[] }[];
 }
 
 const ASSET_DEFS: AssetDef[] = [
-  { name: 'dial_background.png', label: 'Dial Background', filters: [{ name: 'PNG', extensions: ['png'] }] },
-  { name: 'display_background.png', label: 'Display Background', filters: [{ name: 'PNG', extensions: ['png'] }] },
-  { name: 'background.jpg', label: 'Background', filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png'] }] },
-  { name: 'needle.png', label: 'Needle', filters: [{ name: 'PNG', extensions: ['png'] }] },
-  { name: 'font.ttf', label: 'Font', filters: [{ name: 'Fonts', extensions: ['ttf', 'otf'] }] },
-  { name: 'screenshot.png', label: 'Screenshot', filters: [{ name: 'PNG', extensions: ['png'] }] },
+  { name: 'dial_background.png', label: 'Dial Background', mime: 'image/png', filters: [{ name: 'PNG', extensions: ['png'] }] },
+  { name: 'display_background.png', label: 'Display Background', mime: 'image/png', filters: [{ name: 'PNG', extensions: ['png'] }] },
+  { name: 'background.jpg', label: 'Background', mime: 'image/jpeg', filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png'] }] },
+  { name: 'needle.png', label: 'Needle', mime: 'image/png', filters: [{ name: 'PNG', extensions: ['png'] }] },
+  { name: 'font.ttf', label: 'Font', mime: 'font', filters: [{ name: 'Fonts', extensions: ['ttf', 'otf'] }] },
+  { name: 'screenshot.png', label: 'Screenshot', mime: 'image/png', filters: [{ name: 'PNG', extensions: ['png'] }] },
 ];
 
 // --- PID options for preview ---
@@ -146,8 +156,13 @@ function ThemeEditorScreen() {
   const [assets, setAssets] = useState<ThemeAssets>({});
   const [assetExists, setAssetExists] = useState<Record<string, boolean>>({});
 
-  // Preview settings
-  const [previewKind, setPreviewKind] = useState<PanelKind>('meter');
+  // Pending asset changes (staged until Save)
+  const [pendingAdds, setPendingAdds] = useState<Map<string, string>>(new Map());
+  const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(new Set());
+
+  // Preview settings (meter-needle and meter-arc share PanelKind 'meter' but differ in MeterType)
+  type PreviewKind = PanelKind | 'meter-arc';
+  const [previewKind, setPreviewKind] = useState<PreviewKind>('meter');
   const [previewPid, setPreviewPid] = useState('');
   const [previewValue, setPreviewValue] = useState(50);
   const [previewTitle, setPreviewTitle] = useState('RPM');
@@ -167,8 +182,10 @@ function ThemeEditorScreen() {
 
   // Dirty detection
   const isDirty = useMemo(
-    () => JSON.stringify(properties) !== JSON.stringify(savedProperties),
-    [properties, savedProperties],
+    () => JSON.stringify(properties) !== JSON.stringify(savedProperties)
+        || pendingAdds.size > 0
+        || pendingDeletes.size > 0,
+    [properties, savedProperties, pendingAdds, pendingDeletes],
   );
 
   // --- Load theme list ---
@@ -272,9 +289,10 @@ function ThemeEditorScreen() {
   }, [assets.needle]);
 
   // --- Derive configs from properties ---
+  const previewMeterType: MeterType = previewKind === 'meter-arc' ? 'arc' : 'needle';
   const meterConfig = useMemo(
-    () => propertiesToMeterConfig(properties, previewPid || undefined),
-    [properties, previewPid],
+    () => propertiesToMeterConfig(properties, previewPid || undefined, previewMeterType),
+    [properties, previewPid, previewMeterType],
   );
   const numericConfig = useMemo(
     () => propertiesToNumericConfig(properties),
@@ -306,7 +324,7 @@ function ThemeEditorScreen() {
     const fontFamily = (editorFontLoaded && assets.fontBase64) ? 'ThemeEditorFont' : 'sans-serif';
     const currentValue = previewMin + (previewMax - previewMin) * (previewValue / 100);
 
-    if (previewKind === 'meter') {
+    if (previewKind === 'meter' || previewKind === 'meter-arc') {
       const config = { ...meterConfig, tickCount: previewTicks };
       renderMeter({
         ctx,
@@ -319,7 +337,7 @@ function ThemeEditorScreen() {
         unit: previewUnit,
         config,
         backgroundImage: dialBgImg,
-        needleImage: needleImg,
+        needleImage: previewKind === 'meter' ? needleImg : null,
         fontFamily,
         decimals: previewDecimals,
       });
@@ -423,10 +441,22 @@ function ThemeEditorScreen() {
   // --- Theme CRUD ---
   const handleSave = async () => {
     if (!api || !selectedThemeId) return;
+    // 1. Save properties
     const result = await api.themeSaveProperties(selectedThemeId, properties);
-    if (result.success) {
-      setSavedProperties({ ...properties });
+    if (!result.success) return;
+    // 2. Write pending asset additions
+    for (const [name, base64] of pendingAdds) {
+      await api.themeWriteAsset(selectedThemeId, name, base64);
     }
+    // 3. Execute pending asset deletions
+    for (const name of pendingDeletes) {
+      await api.themeDeleteAsset(selectedThemeId, name);
+    }
+    // 4. Clear staging & reload
+    setPendingAdds(new Map());
+    setPendingDeletes(new Set());
+    setSavedProperties({ ...properties });
+    await loadThemeData(selectedThemeId);
   };
 
   const handleCreate = async () => {
@@ -474,6 +504,8 @@ function ThemeEditorScreen() {
       setProperties({});
       setSavedProperties({});
       setAssets({});
+      setPendingAdds(new Map());
+      setPendingDeletes(new Set());
       await loadThemes();
     }
   };
@@ -484,6 +516,8 @@ function ThemeEditorScreen() {
       const ok = await showConfirmAsync('Unsaved changes will be lost. Continue?');
       if (!ok) return;
     }
+    setPendingAdds(new Map());
+    setPendingDeletes(new Set());
     setSelectedThemeId(themeId);
   };
 
@@ -496,14 +530,39 @@ function ThemeEditorScreen() {
     setScreen('menu');
   };
 
-  // --- Asset handlers ---
+  // --- Asset handlers (stage in memory, write on Save) ---
+  const ASSET_KEY_MAP: Record<string, keyof ThemeAssets> = {
+    'dial_background.png': 'dialBackground',
+    'display_background.png': 'displayBackground',
+    'background.jpg': 'background',
+    'needle.png': 'needle',
+    'font.ttf': 'fontBase64',
+  };
+
   const handleAddAsset = async (assetDef: AssetDef) => {
     if (!api || !selectedThemeId) return;
     const pickResult = await api.themePickFile(assetDef.filters);
     if (!pickResult.success || !pickResult.filePath) return;
-    const copyResult = await api.themeCopyAsset(selectedThemeId, pickResult.filePath, assetDef.name);
-    if (copyResult.success) {
-      await loadThemeData(selectedThemeId);
+    const base64 = await api.themeReadFile(pickResult.filePath, assetDef.mime);
+    if (!base64) return;
+    // Stage the addition
+    setPendingAdds(prev => new Map(prev).set(assetDef.name, base64));
+    setPendingDeletes(prev => { const next = new Set(prev); next.delete(assetDef.name); return next; });
+    // Update preview immediately
+    const assetKey = ASSET_KEY_MAP[assetDef.name];
+    if (assetKey) {
+      setAssets(prev => ({ ...prev, [assetKey]: base64 }));
+    }
+    setAssetExists(prev => ({ ...prev, [assetDef.name]: true }));
+    // Reload editor font if font was added
+    if (assetDef.name === 'font.ttf') {
+      setEditorFontLoaded(false);
+      const fontUrl = `data:font/ttf;base64,${base64}`;
+      const face = new FontFace('ThemeEditorFont', `url(${fontUrl})`);
+      face.load().then((loaded) => {
+        document.fonts.add(loaded);
+        setEditorFontLoaded(true);
+      }).catch(() => setEditorFontLoaded(false));
     }
   };
 
@@ -511,10 +570,15 @@ function ThemeEditorScreen() {
     if (!api || !selectedThemeId) return;
     const ok = await showConfirmAsync(`Delete ${assetDef.label}?`);
     if (!ok) return;
-    const result = await api.themeDeleteAsset(selectedThemeId, assetDef.name);
-    if (result.success) {
-      await loadThemeData(selectedThemeId);
+    // Stage the deletion
+    setPendingDeletes(prev => new Set(prev).add(assetDef.name));
+    setPendingAdds(prev => { const next = new Map(prev); next.delete(assetDef.name); return next; });
+    // Update preview immediately
+    const assetKey = ASSET_KEY_MAP[assetDef.name];
+    if (assetKey) {
+      setAssets(prev => ({ ...prev, [assetKey]: undefined }));
     }
+    setAssetExists(prev => ({ ...prev, [assetDef.name]: false }));
   };
 
   return (
@@ -574,10 +638,11 @@ function ThemeEditorScreen() {
             </select>
             <select
               value={previewKind}
-              onChange={(e) => setPreviewKind(e.target.value as PanelKind)}
+              onChange={(e) => setPreviewKind(e.target.value as PreviewKind)}
               className="bg-obd-surface border border-obd-dim/30 rounded px-2 py-1 text-sm"
             >
-              <option value="meter">Meter</option>
+              <option value="meter">Meter (Needle)</option>
+              <option value="meter-arc">Meter (Arc)</option>
               <option value="graph">Graph</option>
               <option value="numeric">Numeric</option>
             </select>

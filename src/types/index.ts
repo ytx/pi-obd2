@@ -48,14 +48,19 @@ export interface StubConfig {
 
 // Panel & Board types (Phase 3)
 export type PanelKind = 'numeric' | 'meter' | 'graph';
+export type MeterType = 'needle' | 'arc';
 
 export interface MeterConfig {
+  meterType: MeterType;
   startAngle: number;  // 6時基準の除外角度 (degrees)
   stopAngle: number;
   tickCount: number;
-  tickInnerRadius: number;  // 0-1 倍率
-  tickOuterRadius: number;
+  tickInnerRadius: number;  // 0-1 倍率 (ティック位置、Torque dialTickInnerRadius)
+  tickOuterRadius: number;  // 0-1 倍率 (ティック位置、Torque dialTickOuterRadius)
   tickColor: string;
+  arcInnerRadius: number;   // 0-1 倍率 (dialMeter バリューアーク内径)
+  arcOuterRadius: number;   // 0-1 倍率 (dialMeter バリューアーク外径)
+  arcColor: string;         // バリューアーク色 (displayIndicatorColour)
   needleColor: string;
   needleLength: number;     // 0-1 倍率
   needleSizeRatio: number;
@@ -67,6 +72,7 @@ export interface MeterConfig {
   unitOffset: number;
   scaleTextRadius: number;  // 0-1 倍率
   fontScale: number;
+  valueFontScale: number;   // dialMeterValueFontScale / dialNeedleValueFontScale
   hideTicks: boolean;
 }
 

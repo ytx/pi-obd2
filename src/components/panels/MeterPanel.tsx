@@ -23,7 +23,8 @@ function MeterPanel({ pid, label, min, max, unit, config, decimals }: MeterPanel
 
   const dialBackgroundUrl = useThemeStore((s) => s.dialBackgroundUrl);
   const needleUrl = useThemeStore((s) => s.needleUrl);
-  const themeMeterConfig = useThemeStore((s) => s.themeMeterConfig);
+  const themeMeterNeedleConfig = useThemeStore((s) => s.themeMeterNeedleConfig);
+  const themeMeterArcConfig = useThemeStore((s) => s.themeMeterArcConfig);
   const currentThemeId = useThemeStore((s) => s.currentThemeId);
   const fontLoaded = useThemeStore((s) => s.fontLoaded);
 
@@ -55,7 +56,9 @@ function MeterPanel({ pid, label, min, max, unit, config, decimals }: MeterPanel
   }, [needleUrl]);
 
   // Use theme config if a theme is active, otherwise use prop config
-  const activeConfig = currentThemeId ? themeMeterConfig : config;
+  const activeConfig = currentThemeId
+    ? (config.meterType === 'arc' ? themeMeterArcConfig : themeMeterNeedleConfig)
+    : config;
   const fontFamily = fontLoaded ? 'TorqueThemeFont, sans-serif' : undefined;
 
   useEffect(() => {
