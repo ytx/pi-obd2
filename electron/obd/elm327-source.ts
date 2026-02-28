@@ -1,46 +1,60 @@
 import fs from 'fs';
-import { execSync } from 'child_process';
+import { constants } from 'fs';
+import { execFileSync } from 'child_process';
 import { DataSource } from './data-source';
 import { OBDValue, OBDConnectionState } from './types';
 import { OBD_PIDS } from './pids';
 import { logger } from '../logger';
 
-const RFCOMM_DEV = '/dev/rfcomm0';
 const COMMAND_TIMEOUT = 10000;
 const READ_CHUNK_SIZE = 1024;
 const BAUD_RATE = 38400;
+const DEFAULT_DEVICE = '/dev/rfcomm0';
 
 export class ELM327Source implements DataSource {
   private state: OBDConnectionState = 'disconnected';
   private fd: number | null = null;
+  private devicePath: string = DEFAULT_DEVICE;
   private pollingPids: string[] = [];
   private dataCallbacks: ((values: OBDValue[]) => void)[] = [];
   private connectionCallbacks: ((state: OBDConnectionState) => void)[] = [];
   private polling = false;
   private pollAbort = false;
   private protocolName: string | null = null;
+  /** Incremented on each connect; stale operations check this to abort. */
+  private generation = 0;
 
-  async connect(btAddress?: string): Promise<void> {
-    if (this.state === 'connected') return;
+  async connect(devicePath?: string): Promise<void> {
+    if (this.state === 'connected' || this.state === 'connecting') {
+      logger.info('ELM327', `connect() skipped (state=${this.state})`);
+      return;
+    }
+    logger.info('ELM327', `connect() called (state=${this.state}, devicePath=${devicePath ?? 'default'})`);
+
+    // Invalidate any stale operations from previous connect attempts
+    const gen = ++this.generation;
+
+    // Clean up any leftover fd from a previous failed connection
+    await this.cleanup();
+
     this.setState('connecting');
+    this.devicePath = devicePath || DEFAULT_DEVICE;
 
     try {
-      if (btAddress) {
-        this.rfcommBind(btAddress);
-      }
+      // Open the serial device with O_NONBLOCK to prevent blocking the event loop
+      this.fd = fs.openSync(this.devicePath, constants.O_RDWR | constants.O_NONBLOCK);
 
-      // Configure serial port with stty (like pyserial's Serial() constructor)
+      // Configure serial port with stty after opening (stty on a closed/busy device can hang)
       this.configurePort();
 
-      // Open the rfcomm device
-      this.fd = fs.openSync(RFCOMM_DEV, 'r+');
-
       // Initialize ELM327 (following python-obd's proven sequence)
-      await this.elmInit();
+      await this.elmInit(gen);
 
+      if (gen !== this.generation) return; // aborted
       this.setState('connected');
-      this.startPolling();
+      this.startPolling(gen);
     } catch (err) {
+      if (gen !== this.generation) return; // aborted by newer connect
       logger.error('ELM327', `Connect failed: ${err}`);
       await this.cleanup();
       this.setState('error');
@@ -49,7 +63,11 @@ export class ELM327Source implements DataSource {
   }
 
   async disconnect(): Promise<void> {
-    await this.stopPolling();
+    logger.info('ELM327', `disconnect() called (state=${this.state}, polling=${this.polling})`);
+    // Invalidate any in-progress connect/poll operations
+    this.generation++;
+    this.pollAbort = true;
+    this.polling = false;
     await this.cleanup();
     this.setState('disconnected');
   }
@@ -71,8 +89,10 @@ export class ELM327Source implements DataSource {
   }
 
   dispose(): void {
-    this.stopPolling();
-    this.cleanup();
+    this.generation++;
+    this.pollAbort = true;
+    this.polling = false;
+    this.cleanup(true); // restore hupcl so DTR drops and ELM327 resets cleanly
     this.dataCallbacks = [];
     this.connectionCallbacks = [];
   }
@@ -84,45 +104,42 @@ export class ELM327Source implements DataSource {
     for (const cb of this.connectionCallbacks) cb(state);
   }
 
-  private rfcommBind(btAddress: string): void {
+  /** Configure serial port and ensure O_NONBLOCK is active on our fd.
+   *  stty is run via stdin redirection to our fd (avoids stty opening the device
+   *  separately, which blocks on ttyACM without carrier detect).
+   *  After stty, close and re-open with O_NONBLOCK since child_process clears the flag. */
+  private configurePort(): void {
+    if (this.fd === null) return;
     try {
-      execSync('sudo rfcomm release 0', { stdio: 'pipe' });
-    } catch { /* ignore */ }
-
-    try {
-      execSync(`sudo rfcomm bind 0 ${btAddress}`, { stdio: 'pipe' });
-      logger.info('ELM327', `rfcomm bound to ${btAddress}`);
+      // stty without -F operates on stdin; pass our O_NONBLOCK fd as stdin
+      execFileSync('stty', [
+        String(BAUD_RATE), 'raw', '-echo', '-echoe', '-echok', '-echoctl', '-echoke',
+        '-hupcl', 'clocal',
+      ], {
+        stdio: [this.fd, 'pipe', 'pipe'],
+        timeout: 3000,
+      });
+      logger.info('ELM327', `stty configured: ${this.devicePath} ${BAUD_RATE} baud, raw mode`);
     } catch (err) {
-      throw new Error(`rfcomm bind failed: ${err}`);
+      logger.warn('ELM327', `stty failed (may still work): ${err}`);
     }
 
-    for (let i = 0; i < 10; i++) {
-      if (fs.existsSync(RFCOMM_DEV)) break;
-      execSync('sleep 0.1');
-    }
-    if (!fs.existsSync(RFCOMM_DEV)) {
-      throw new Error(`${RFCOMM_DEV} not found after rfcomm bind`);
-    }
-
+    // Re-open with O_NONBLOCK — child_process clears O_NONBLOCK on the inherited fd.
+    // -hupcl/clocal are already set, so close+open won't block or drop DTR.
     try {
-      const uid = process.getuid?.() ?? 1000;
-      const gid = process.getgid?.() ?? 1000;
-      execSync(`sudo chown ${uid}:${gid} ${RFCOMM_DEV}`, { stdio: 'pipe' });
+      const oldFd = this.fd;
+      this.fd = fs.openSync(this.devicePath, constants.O_RDWR | constants.O_NONBLOCK);
+      try { fs.closeSync(oldFd); } catch { /* ignore */ }
+      logger.info('ELM327', 'Re-opened with O_NONBLOCK');
     } catch (err) {
-      logger.warn('ELM327', `chown ${RFCOMM_DEV} failed: ${err}`);
+      logger.warn('ELM327', `Re-open failed (continuing with current fd): ${err}`);
     }
   }
 
-  /** Configure serial port settings (equivalent to pyserial's Serial() params) */
-  private configurePort(): void {
-    try {
-      execSync(
-        `stty -F ${RFCOMM_DEV} ${BAUD_RATE} raw -echo -echoe -echok -echoctl -echoke`,
-        { stdio: 'pipe' },
-      );
-      logger.info('ELM327', `stty configured: ${BAUD_RATE} baud, raw mode`);
-    } catch (err) {
-      logger.warn('ELM327', `stty failed (may still work): ${err}`);
+  /** Check if the current operation is still valid (not superseded by disconnect/reconnect). */
+  private assertGen(gen: number): void {
+    if (gen !== this.generation) {
+      throw new Error('Connection aborted (superseded)');
     }
   }
 
@@ -136,22 +153,25 @@ export class ELM327Source implements DataSource {
    * 6. ATSP0 + 0100 (auto protocol detection)
    * 7. ATDPN (read detected protocol)
    */
-  private async elmInit(): Promise<void> {
-    // 1. Wait for BT SPP to stabilize, then drain until no data for 1s
-    logger.info('ELM327', 'Waiting for BT SPP to stabilize...');
-    await this.drainUntilQuiet(2000, 500);
+  private async elmInit(gen: number): Promise<void> {
+    // 1. Wait for BT SPP to stabilize, then drain until no data for 500ms
+    logger.info('ELM327', 'Waiting for serial to stabilize...');
+    await this.drainUntilQuiet(2000, 500, gen);
+    this.assertGen(gen);
 
     // 2. Send garbage bytes to get a '>' prompt (like python-obd auto_baudrate)
     logger.info('ELM327', 'Probing for ELM327 prompt...');
     let gotPrompt = false;
     for (let attempt = 0; attempt < 3; attempt++) {
+      this.assertGen(gen);
       try {
-        await this.sendCommand('\x7F\x7F');
+        await this.sendCommand('\x7F\x7F', gen);
         gotPrompt = true;
         break;
       } catch {
+        this.assertGen(gen);
         logger.warn('ELM327', `Probe attempt ${attempt + 1} failed, retrying...`);
-        await this.drainUntilQuiet(500, 200);
+        await this.drainUntilQuiet(500, 200, gen);
       }
     }
     if (!gotPrompt) {
@@ -159,17 +179,21 @@ export class ELM327Source implements DataSource {
     }
 
     // 3. ATZ (reset) — python-obd: "return data can be junk, so don't bother checking"
+    this.assertGen(gen);
     try {
-      const atzResp = await this.sendCommand('ATZ');
+      const atzResp = await this.sendCommand('ATZ', gen);
       logger.info('ELM327', `ATZ → ${this.sanitize(atzResp)}`);
     } catch {
+      this.assertGen(gen);
       logger.warn('ELM327', 'ATZ timed out (may be normal during reset)');
     }
     await new Promise((r) => setTimeout(r, 1000));
-    await this.drainUntilQuiet(500, 200);
+    this.assertGen(gen);
+    await this.drainUntilQuiet(500, 200, gen);
+    this.assertGen(gen);
 
     // 4. ATE0 (echo off) — first command that must succeed
-    const ate0 = await this.sendCommand('ATE0');
+    const ate0 = await this.sendCommand('ATE0', gen);
     logger.info('ELM327', `ATE0 → ${this.sanitize(ate0)}`);
     if (!ate0.includes('OK')) {
       logger.warn('ELM327', 'ATE0 did not return OK, continuing anyway');
@@ -177,29 +201,34 @@ export class ELM327Source implements DataSource {
 
     // 5. ATH0, ATL0, ATS0
     for (const cmd of ['ATH0', 'ATL0', 'ATS0']) {
-      const resp = await this.sendCommand(cmd);
+      this.assertGen(gen);
+      const resp = await this.sendCommand(cmd, gen);
       logger.info('ELM327', `${cmd} → ${this.sanitize(resp)}`);
     }
 
     // 6. Protocol detection: ATSP0 → 0100 → ATDPN
-    const sp0 = await this.sendCommand('ATSP0');
+    this.assertGen(gen);
+    const sp0 = await this.sendCommand('ATSP0', gen);
     logger.info('ELM327', `ATSP0 → ${this.sanitize(sp0)}`);
 
     // 0100 triggers protocol search (may take several seconds)
+    this.assertGen(gen);
     logger.info('ELM327', 'Searching for vehicle protocol (0100)...');
-    const r0100 = await this.sendCommand('0100');
+    const r0100 = await this.sendCommand('0100', gen);
     logger.info('ELM327', `0100 → ${this.sanitize(r0100)}`);
     if (r0100.toUpperCase().includes('UNABLE TO CONNECT')) {
       logger.warn('ELM327', 'Vehicle not responding (ignition off?)');
     }
 
     // ATDPN — read detected protocol number
-    const dpn = await this.sendCommand('ATDPN');
+    this.assertGen(gen);
+    const dpn = await this.sendCommand('ATDPN', gen);
     logger.info('ELM327', `ATDPN → ${this.sanitize(dpn)}`);
     this.protocolName = dpn.replace(/^A/, '').trim(); // strip "A" prefix (auto)
 
     // 7. Verify with ATI
-    const ati = await this.sendCommand('ATI');
+    this.assertGen(gen);
+    const ati = await this.sendCommand('ATI', gen);
     logger.info('ELM327', `ATI → ${this.sanitize(ati)}`);
     if (!ati.includes('ELM327')) {
       throw new Error(`ELM327 not detected (ATI: ${this.sanitize(ati)})`);
@@ -212,8 +241,12 @@ export class ELM327Source implements DataSource {
    * Send command and wait for '>' prompt.
    * Drains input buffer before writing (like pyserial's flushInput).
    */
-  private sendCommand(cmd: string): Promise<string> {
+  private sendCommand(cmd: string, gen: number): Promise<string> {
     return new Promise((resolve, reject) => {
+      if (gen !== this.generation) {
+        reject(new Error('Connection aborted (superseded)'));
+        return;
+      }
       if (this.fd === null) {
         reject(new Error('Not connected'));
         return;
@@ -225,13 +258,24 @@ export class ELM327Source implements DataSource {
       this.drainRead();
 
       const cmdBuf = Buffer.from(cmd + '\r', 'ascii');
-      fs.writeSync(fd, cmdBuf);
+      try {
+        fs.writeSync(fd, cmdBuf);
+      } catch (err) {
+        reject(err);
+        return;
+      }
 
       let response = '';
       const readBuf = Buffer.alloc(READ_CHUNK_SIZE);
       const deadline = Date.now() + COMMAND_TIMEOUT;
 
       const readLoop = () => {
+        // Abort if generation changed (disconnect/reconnect happened)
+        if (gen !== this.generation) {
+          reject(new Error('Connection aborted (superseded)'));
+          return;
+        }
+
         if (Date.now() > deadline) {
           reject(new Error(`Timeout waiting for response to: ${cmd}`));
           return;
@@ -281,18 +325,17 @@ export class ELM327Source implements DataSource {
 
   /**
    * Wait until no data arrives for `quietMs`, up to `maxWaitMs` total.
-   * Used to wait for BT SPP connection noise to stop.
+   * Used to wait for serial connection noise to stop.
    */
-  private async drainUntilQuiet(maxWaitMs: number, quietMs: number): Promise<void> {
+  private async drainUntilQuiet(maxWaitMs: number, quietMs: number, gen: number): Promise<void> {
     const start = Date.now();
     let lastDataTime = Date.now();
     let totalDrained = 0;
 
     while (Date.now() - start < maxWaitMs) {
-      const before = totalDrained;
+      if (gen !== this.generation) return; // aborted
+
       this.drainRead();
-      // drainRead logs its own count; we track via fd reads
-      // Just check if time since last data exceeds quietMs
       const buf = Buffer.alloc(READ_CHUNK_SIZE);
       let gotData = false;
       try {
@@ -319,11 +362,11 @@ export class ELM327Source implements DataSource {
     return s.replace(/\r/g, '\\r').replace(/\n/g, '\\n').substring(0, 200);
   }
 
-  private startPolling(): void {
+  private startPolling(gen: number): void {
     if (this.polling) return;
     this.polling = true;
     this.pollAbort = false;
-    this.pollLoop();
+    this.pollLoop(gen);
   }
 
   private async stopPolling(): Promise<void> {
@@ -332,8 +375,8 @@ export class ELM327Source implements DataSource {
     await new Promise((r) => setTimeout(r, 200));
   }
 
-  private async pollLoop(): Promise<void> {
-    while (this.polling && !this.pollAbort && this.state === 'connected') {
+  private async pollLoop(gen: number): Promise<void> {
+    while (this.polling && !this.pollAbort && this.state === 'connected' && gen === this.generation) {
       try {
         const pids = this.pollingPids.length > 0
           ? this.pollingPids
@@ -343,25 +386,27 @@ export class ELM327Source implements DataSource {
         const now = Date.now();
 
         for (const pid of pids) {
-          if (this.pollAbort) break;
+          if (this.pollAbort || gen !== this.generation) break;
 
           const pidDef = OBD_PIDS[pid];
           if (!pidDef) continue;
 
-          const resp = await this.sendCommand(pid);
+          const resp = await this.sendCommand(pid, gen);
           const value = this.parseResponse(pid, resp);
           if (value !== null) {
             values.push({ pid, value, timestamp: now });
           }
         }
 
-        if (values.length > 0 && !this.pollAbort) {
+        if (values.length > 0 && !this.pollAbort && gen === this.generation) {
           for (const cb of this.dataCallbacks) cb(values);
         }
       } catch (err) {
+        if (gen !== this.generation) return; // aborted — don't set error state
         logger.error('ELM327', `Poll error: ${err}`);
         if (this.polling) {
           this.polling = false;
+          await this.cleanup();
           this.setState('error');
         }
         return;
@@ -394,13 +439,26 @@ export class ELM327Source implements DataSource {
     return pidDef.formula(bytes);
   }
 
-  private async cleanup(): Promise<void> {
+  /**
+   * Close serial fd. By default keeps -hupcl so DTR stays asserted and the
+   * ELM327 doesn't reset (allows fast reconnect). Pass restoreHupcl=true
+   * only on final dispose so the device resets cleanly for other programs.
+   */
+  private async cleanup(restoreHupcl = false): Promise<void> {
     if (this.fd !== null) {
-      try { fs.closeSync(this.fd); } catch { /* ignore */ }
+      logger.info('ELM327', `cleanup: closing fd=${this.fd} (restoreHupcl=${restoreHupcl})`);
+      if (restoreHupcl) {
+        try {
+          execFileSync('stty', ['hupcl', '-clocal'], {
+            stdio: [this.fd, 'pipe', 'pipe'],
+            timeout: 1000,
+          });
+        } catch { /* ignore — best effort */ }
+      }
+      try { fs.closeSync(this.fd); } catch (err) {
+        logger.warn('ELM327', `cleanup: close failed: ${err}`);
+      }
       this.fd = null;
     }
-    try {
-      execSync('sudo rfcomm release 0', { stdio: 'pipe' });
-    } catch { /* ignore */ }
   }
 }

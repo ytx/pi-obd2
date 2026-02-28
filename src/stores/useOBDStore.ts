@@ -11,7 +11,7 @@ interface OBDState {
   availablePids: OBDPidInfo[];
   currentProfile: StubProfileName;
   profiles: string[];
-  obdBtAddress: string | null;
+  obdDevicePath: string | null;
 
   setConnectionState: (state: OBDConnectionState) => void;
   updateValues: (values: OBDValue[]) => void;
@@ -20,7 +20,7 @@ interface OBDState {
   setAvailablePids: (pids: OBDPidInfo[]) => void;
   setCurrentProfile: (profile: StubProfileName) => void;
   setProfiles: (profiles: string[]) => void;
-  setObdBtAddress: (address: string | null) => void;
+  setObdDevicePath: (path: string | null) => void;
 }
 
 export const useOBDStore = create<OBDState>()(
@@ -33,7 +33,7 @@ export const useOBDStore = create<OBDState>()(
       availablePids: [],
       currentProfile: 'idle',
       profiles: [],
-      obdBtAddress: null,
+      obdDevicePath: null,
 
       setConnectionState: (connectionState) => set({ connectionState }),
       updateValues: (values) =>
@@ -51,11 +51,11 @@ export const useOBDStore = create<OBDState>()(
       setAvailablePids: (availablePids) => set({ availablePids }),
       setCurrentProfile: (currentProfile) => set({ currentProfile }),
       setProfiles: (profiles) => set({ profiles }),
-      setObdBtAddress: (obdBtAddress) => set({ obdBtAddress }),
+      setObdDevicePath: (obdDevicePath) => set({ obdDevicePath }),
     }),
     {
       name: 'obd2-bt',
-      partialize: (state) => ({ obdBtAddress: state.obdBtAddress }),
+      partialize: (state) => ({ obdDevicePath: state.obdDevicePath }),
     },
   ),
 );

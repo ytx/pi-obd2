@@ -31,6 +31,7 @@ function DashboardScreen() {
   // Then auto-connect after hydration
   useEffect(() => {
     if (!window.obd2API) return;
+    let cancelled = false;
 
     window.obd2API.obdGetAvailablePids().then(setAvailablePids);
     window.obd2API.obdIsStubMode().then(setStubMode);
@@ -44,21 +45,25 @@ function DashboardScreen() {
     );
 
     // Wait for OBDStore hydration then auto-connect (only if disconnected)
+    // cancelled flag prevents duplicate connect from React StrictMode double-mount
     waitForHydration(useOBDStore).then(async () => {
-      const { obdBtAddress } = useOBDStore.getState();
+      if (cancelled) return;
+      const { obdDevicePath } = useOBDStore.getState();
       window.obd2API.logSettings({
-        obdBtAddress,
+        obdDevicePath,
         currentThemeId: useThemeStore.getState().currentThemeId,
       });
       const currentState = await window.obd2API.obdGetState();
+      if (cancelled) return;
       if (currentState === 'disconnected' || currentState === 'error') {
-        window.obd2API.obdConnect(obdBtAddress ?? undefined).catch((e) =>
+        window.obd2API.obdConnect(obdDevicePath ?? undefined).catch((e) =>
           console.warn('Auto-connect failed:', e),
         );
       }
     });
 
     return () => {
+      cancelled = true;
       removeData();
       removeConn();
     };

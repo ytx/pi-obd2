@@ -27,26 +27,28 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 
 ### Electron メインプロセス (`electron/`)
 
-- `main.ts` - Electron 初期化、IPC ハンドラ、システム操作、自動接続、USB マウント
+- `main.ts` - Electron 初期化、IPC ハンドラ、システム操作、自動接続、USB マウント、SIGINT/SIGTERM クリーンアップ
 - `logger.ts` - リングバッファ方式ログモジュール（max 500 エントリ、USB 書出し対応）
 - `preload.ts` - contextBridge によるセキュア IPC
-- `obd/data-source.ts` - DataSource 抽象インターフェース
+- `obd/data-source.ts` - DataSource 抽象インターフェース（`connect(devicePath?)` でデバイスパス指定）
 - `obd/stub-source.ts` - スタブデータソース（開発用シミュレーター）
-- `obd/elm327-source.ts` - ELM327 データソース（実機用）
+- `obd/elm327-source.ts` - ELM327 データソース（実機用、任意のシリアルデバイスパスに対応）
 - `obd/pids.ts` - PID 定義テーブル（名前、単位、計算式、min/max）
 - `themes/theme-loader.ts` - テーマディレクトリのスキャン・読込（複数ディレクトリ対応、USB テーマ `usb:` プレフィックス）
-- `bluetooth/bluetooth-manager.ts` - BT スキャン・ペアリング・接続（bluetoothctl ラッパー）
+- `bluetooth/bluetooth-manager.ts` - BT スキャン・ペアリング・接続・rfcomm bind（bluetoothctl ラッパー）
 - `network/wifi-manager.ts` - WiFi スキャン・接続（nmcli ラッパー）
 - `gpio/gpio-manager.ts` - GPIO 監視（gpiomon/gpioget ラッパー、edge 検出、デバウンス 50ms、非対応環境ではスタブ）
 
 ### React レンダラ (`src/`)
 
 - `components/DashboardScreen.tsx` - メイン画面（フルスクリーンボード + 左上タップでメニュー + 接続ドットオーバーレイ）
-- `components/settings/SystemSettingsScreen.tsx` - システム設定（接続・BT・WiFi・USB・システム情報・アクション）
+- `components/settings/SystemSettingsScreen.tsx` - システム設定（WiFi・USB・GPIO・システム情報・アクション）
+- `components/settings/BluetoothScreen.tsx` - Bluetooth 設定画面（スキャン・ペアリング・rfcomm bind）
+- `components/settings/OBD2Screen.tsx` - OBD2 接続画面（シリアルデバイス選択・Simulator・接続/切断）
 - `components/settings/DisplaySettingsScreen.tsx` - 表示設定（テーマ・ボード編集）
 - `components/settings/DevSettingsScreen.tsx` - 開発設定（スタブシミュレーター、ログビューア）
 - `components/boards/BoardContainer.tsx` - ボード切替コンテナ（スワイプ + キーボード）
-- `components/MenuScreen.tsx` - 3x3 メニュー画面（各設定画面・レイアウトエディタへの遷移）
+- `components/MenuScreen.tsx` - 3x3 メニュー画面（Bluetooth・OBD2・各設定画面への遷移）
 - `components/boards/BoardView.tsx` - 64x36 グリッド absolute positioning ボードビュー
 - `components/boards/useSwipe.ts` - タッチスワイプ検出フック
 - `components/panels/PanelSlot.tsx` - パネル種別ルーティング + スロットオーバーライド適用
@@ -62,6 +64,7 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 - `components/settings/LogSection.tsx` - ログビューア（フィルター、自動スクロール、2秒ポーリング）
 - `components/settings/LayoutEditorScreen.tsx` - レイアウトエディタ（64x36 グリッド、スロット追加/削除/位置変更/z-order）
 - `components/settings/ThemeSection.tsx` - テーマ選択（スクリーンショット付き）
+- `components/settings/ThemeEditorScreen.tsx` - テーマエディタ（プロパティ編集・プレビュー・アセット管理・テーマ CRUD）
 - `canvas/meter-renderer.ts` - メーター Canvas 描画（純粋関数）
 - `canvas/graph-renderer.ts` - グラフ Canvas 描画（純粋関数）
 - `canvas/time-buffer.ts` - 時系列循環バッファ（maxSize=300、PID 別共有バッファ）
@@ -130,13 +133,38 @@ PanelSlot.tsx でフォールバックチェーン: スロットオーバーラ�
 
 ### OBD2 通信
 
-- Bluetooth SPP のみ（ELM327）
+- Bluetooth SPP または USB シリアル（ELM327）
 - `bluetoothctl` でスキャン・ペアリング・接続（`electron/bluetooth/bluetooth-manager.ts`）
-- SPP rfcomm → fs.openSync/readSync/writeSync でデータ通信
+- シリアルデバイス（`/dev/rfcomm*`, `/dev/ttyUSB*`, `/dev/ttyACM*`, `/dev/ttyS*`）→ fs.openSync/readSync/writeSync でデータ通信
 - 表示中ボードの使用 PID のみポーリング（優先度付き）
-- 起動時自動接続（既に接続済みならスキップ）
-- `sudo rfcomm bind` 後に `sudo chown` で `/dev/rfcomm0` の所有権を実行ユーザーに変更（root 所有だと EACCES）
-- システム設定画面から「Stub」ボタンで手動スタブ切替可能（ELM327 デバイス不在時）
+- 起動時自動接続（既に接続済みならスキップ、`cancelled` フラグで StrictMode 二重呼出し防止）
+- `sudo rfcomm bind` は Bluetooth 画面（`BluetoothManager.rfcommBind()`）で実行、`sudo chown` で所有権変更
+- OBD2 画面でデバイス選択 → 接続、Simulator も選択可能
+- IPC `obd-connect` / `obd-connect-stub` は fire-and-forget（接続進捗は `obd-connection-change` イPC イベントで通知）
+
+**ELM327 シリアルポートライフサイクル:**
+```
+open (O_RDWR | O_NONBLOCK)
+  → stty (stdin に fd を渡す、-hupcl clocal)
+  → close + re-open (O_NONBLOCK 復元)
+  → elmInit → pollLoop
+  → cleanup (close、hupcl 復元なし)
+  → dispose 時のみ stty hupcl -clocal → close (DTR drop で ELM327 リセット)
+```
+
+**重要な設計判断:**
+- **O_NONBLOCK**: `fs.readSync` が Node.js イベントループをブロックしないために必須。ttyACM ではキャリア検出待ちも回避
+- **stty は stdin 経由**: `stty -F <path>` はデバイスを内部で open するため ttyACM でブロックする。代わりに `execFileSync('stty', [...], { stdio: [this.fd, 'pipe', 'pipe'] })` で既存 fd を stdin として渡す
+- **stty 後の re-open**: `execFileSync` が子プロセスに fd を渡すと O_NONBLOCK フラグがクリアされる。stty 後に close → re-open で O_NONBLOCK を復元
+- **`-hupcl clocal`**: 通常 close 時に DTR を落とさない（ELM327 がリセットされず再接続が速い）
+- **`hupcl -clocal` の復元は `dispose()` のみ**: プログラム終了時に DTR を落として ELM327 をリセット。これにより `screen` 等の他プログラムから正常にアクセス可能
+- **SIGINT/SIGTERM ハンドラ**: `main.ts` で `process.on('SIGINT'/'SIGTERM')` → `cleanupAndQuit()` → `dataSource.dispose()` で確実に DTR リセット
+
+**generation カウンターパターン:**
+- `connect()` のたびに `++this.generation` でインクリメント
+- 全非同期操作（`elmInit`, `sendCommand`, `drainUntilQuiet`, `pollLoop`）が `gen` 引数を受け取り、`gen !== this.generation` で中断
+- `disconnect()` / `dispose()` も `generation++` で進行中の操作を無効化
+- 同一 ELM327Source インスタンスの再利用時に、古い非同期操作が新しい接続の fd を汚染するのを防止
 
 ### Torque テーマ
 
@@ -213,12 +241,30 @@ themes/<theme-name>/
 - 左上タップゾーン（100x100px）→ メニュー画面
 
 **メニュー画面（3x3 グリッド）:**
-- Display Settings / Layout Editor / System Settings / Dev Settings
+- Bluetooth / OBD2 / Display Settings / Layout Editor / Theme Editor / System Settings / Dev Settings
 - 背景タップでダッシュボードに戻る
 
+**Bluetooth 画面:**
+- BT デバイススキャン・ペアリング
+- ペアリング成功後に即座に `rfcomm bind` → `/dev/rfcommN` 作成
+- Back ボタンでメニューに戻る
+
+**OBD2 画面:**
+- シリアルデバイス一覧（`/dev/rfcomm*`, `/dev/ttyUSB*`, `/dev/ttyACM*`, `/dev/ttyS*`）
+- 各デバイスに Connect/Disconnect ボタン
+- Simulator（スタブ接続）も選択可能
+- 接続成功 → `obdDevicePath` に保存（起動時自動接続に使用）
+- Refresh ボタンでデバイス再スキャン
+
+**テーマエディタ画面:**
+- 左半分: プレビュー（テーマ選択、PID/パネル種別切替、Canvas プレビュー、値スライダー、テーマ CRUD）
+- 右半分: プロパティエディタ（角度・半径・色・フォント・目盛り・テキストオフセット）+ アセット管理
+- プレビューは `renderMeter()` / `renderGraph()` を直接呼び出し、`useThemeStore` を使わない
+- エディタ専用フォント `ThemeEditorFont` でダッシュボードの `TorqueThemeFont` と共存
+- PID 選択時は PID 別プロパティを表示、未設定なら Global 値をプレースホルダー表示
+- 未保存変更の dirty 検出 + テーマ切替・画面離脱時の確認ダイアログ
+
 **システム設定画面（右上タップ）:**
-- OBD2 接続（状態、Connect/Stub/Disconnect、STUB モード表示、ELM327 アドレス表示）
-- Bluetooth（スキャン・ペアリング）
 - WiFi（スキャン・接続）
 - USB Memory（検出・マウント/アンマウント・設定エクスポート/インポート）
 - GPIO（イルミ: ピン・テーマ選択・状態表示、リバース: ピン・ボード選択・状態表示）
@@ -241,7 +287,7 @@ Zustand `persist` ミドルウェアで以下を永続化:
 |---|---|---|---|
 | `useBoardStore` | `obd2-boards` (v2) | `boards`, `layouts`, `currentBoardId`, `screenPadding` | `panelDefs`（静的デフォルト） |
 | `useThemeStore` | `obd2-theme` | `currentThemeId` | テーマデータ・派生状態（base64 が巨大） |
-| `useOBDStore` | `obd2-bt` | `obdBtAddress` | 接続状態・ライブデータ |
+| `useOBDStore` | `obd2-bt` | `obdDevicePath` | 接続状態・ライブデータ |
 | `useGpioStore` | `obd2-gpio` | `illuminationPin`, `reversePin`, `illuminationThemeId`, `reverseBoardId` | `illuminationActive`, `reverseActive`（ランタイム） |
 | `useAppStore` | — | なし | 全て（ランタイム情報） |
 
@@ -252,7 +298,7 @@ Zustand `persist` ミドルウェアで以下を永続化:
 - `persist` ミドルウェアは非同期で localStorage から復元する
 - コンポーネントの `useEffect` が復元前に実行されると初期値（null）を読んでしまう
 - `waitForHydration(store)` で `hasHydrated()` / `onFinishHydration()` を使い、復元完了後に `getState()` で読む
-- `DashboardScreen`: ハイドレーション後に `obdBtAddress` を取得して自動接続
+- `DashboardScreen`: ハイドレーション後に `obdDevicePath` を取得して自動接続（`cancelled` フラグで StrictMode 二重防止）
 - `App.tsx`: ハイドレーション後に `currentThemeId` を取得してテーマ復元
 
 ### Bluetooth スキャン
@@ -297,7 +343,10 @@ sonix2 の USB マウントパターンを踏襲:
 - `detect-usb` — USB デバイス一覧
 - `mount-usb` / `unmount-usb` — マウント/アンマウント
 - `usb-export-config` / `usb-import-config` — 設定の読み書き
+- `obd-connect` — OBD2 接続（`devicePath?: string` — デバイスパス指定で ELM327、なしで現行モード）
 - `obd-connect-stub` — 強制スタブモード接続（既存接続を切断して切替）
+- `serial-scan` — シリアルデバイス一覧（`/dev/rfcomm*`, `/dev/ttyUSB*`, `/dev/ttyACM*`, `/dev/ttyS*`）
+- `bt-rfcomm-bind` — Bluetooth rfcomm bind（ペアリング済みデバイスの `/dev/rfcommN` 作成）
 - `get-logs` — ログエントリ一覧取得
 - `save-logs-usb` — USB マウントポイントにログファイル書出し
 - `log-settings` — renderer からの設定情報をログに記録
@@ -305,6 +354,15 @@ sonix2 の USB マウントパターンを踏襲:
 - `gpio-setup(pins)` — GPIO ピン監視開始
 - `gpio-read(pin)` — GPIO ピン現在値取得
 - `gpio-change` イベント（main → renderer）— GPIO 変化通知
+- `theme-get-dirs` — 書込可能テーマディレクトリ一覧
+- `theme-create(name, targetDir?)` — 新規テーマ作成
+- `theme-duplicate(sourceId, newName)` — テーマ複製
+- `theme-delete(themeId)` — テーマ削除
+- `theme-rename(themeId, newName)` — テーマ名変更
+- `theme-save-properties(themeId, properties)` — properties.txt 上書き保存
+- `theme-pick-file(filters)` — ファイル選択ダイアログ
+- `theme-copy-asset(themeId, sourcePath, assetName)` — アセットコピー
+- `theme-delete-asset(themeId, assetName)` — アセット削除
 
 ### GPIO 連動
 
@@ -390,6 +448,7 @@ npm run electron -- --window-size=1024,576
 - `bluetoothctl` はインタラクティブシェルなので `stdio: 'ignore'` で spawn すると即終了する。stdin を pipe で開き、コマンドを書き込む方式にすること
 - `/boot/firmware/config/save.sh` や `rfcomm bind`、`mount` など root 権限が必要な操作は `sudo` 付きで `execSync` する
 - `console.log/error` は使わず `electron/logger.ts` の `logger.info/warn/error(tag, message)` を使用する
+- `useEffect` 内の fire-and-forget Promise（`waitForHydration().then(...)` 等）には `cancelled` フラグを設け、cleanup で `cancelled = true` にする。React StrictMode が dev モードでコンポーネントを二重マウントするため、フラグなしだと副作用が2回実行される
 
 ## 開発ツール (`scripts/`)
 

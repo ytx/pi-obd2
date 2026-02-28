@@ -57,6 +57,12 @@ function parseBool(value: string | undefined, fallback: boolean): boolean {
   return value.toLowerCase() === 'true';
 }
 
+/** Convert OBD PID (e.g. '010C') to Torque PID key (e.g. '0c') */
+export function toTorquePid(pid: string): string {
+  // Strip mode byte prefix (first 2 chars) and lowercase
+  return pid.length === 4 ? pid.slice(2).toLowerCase() : pid.toLowerCase();
+}
+
 /** Convert Torque properties to MeterConfig */
 export function propertiesToMeterConfig(
   props: ThemeProperties,
@@ -64,9 +70,10 @@ export function propertiesToMeterConfig(
 ): MeterConfig {
   const d = DEFAULT_METER_CONFIG;
 
-  // Angles - PID-specific overrides
-  const startKey = pid ? `dialStartAngle_${pid}` : undefined;
-  const stopKey = pid ? `dialStopAngle_${pid}` : undefined;
+  // Angles - PID-specific overrides (Torque uses lowercase hex PID byte, e.g. '0c')
+  const tpid = pid ? toTorquePid(pid) : undefined;
+  const startKey = tpid ? `dialStartAngle_${tpid}` : undefined;
+  const stopKey = tpid ? `dialStopAngle_${tpid}` : undefined;
   const startAngle = parseFloat0(
     (startKey && props[startKey]) || props.globalDialStartAngle,
     d.startAngle,
@@ -77,7 +84,7 @@ export function propertiesToMeterConfig(
   );
 
   // Ticks
-  const hideKey = pid ? `hideTicks_${pid}` : undefined;
+  const hideKey = tpid ? `hideTicks_${tpid}` : undefined;
   const hideTicks = parseBool(
     (hideKey && props[hideKey]) || props.globalHideTicks,
     d.hideTicks,
@@ -105,7 +112,10 @@ export function propertiesToMeterConfig(
     titleOffset: parseFloat0(props.dialNeedleTitleTextOffset, d.titleOffset),
     valueOffset: parseFloat0(props.dialNeedleValueTextOffset, d.valueOffset),
     unitOffset: parseFloat0(props.dialNeedleUnitTextOffset, d.unitOffset),
-    scaleTextRadius: torqueRadius(props.globalTextRadius, d.scaleTextRadius),
+    scaleTextRadius: torqueRadius(
+      (tpid && props[`textRadius_${tpid}`]) || props.globalTextRadius,
+      d.scaleTextRadius,
+    ),
     fontScale: parseFloat0(props.globalFontScale, d.fontScale),
     hideTicks,
   };
@@ -134,10 +144,12 @@ function toFillColor(hex: string): string {
 }
 
 /** Convert Torque properties to GraphConfig */
-export function propertiesToGraphConfig(props: ThemeProperties): GraphConfig {
+export function propertiesToGraphConfig(props: ThemeProperties, pid?: string): GraphConfig {
   const d = DEFAULT_GRAPH_CONFIG;
-  // graphLineColour → displayTextValueColour → default
+  const tpid = pid ? toTorquePid(pid) : undefined;
+  // PID-specific graphLineColour → global graphLineColour → displayTextValueColour → default
   const lineColor =
+    (tpid && parseColor(props[`graphLineColour_${tpid}`])) ??
     parseColor(props.graphLineColour) ??
     parseColor(props.displayTextValueColour) ??
     d.lineColor;

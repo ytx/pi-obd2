@@ -17,7 +17,7 @@ const obd2API = {
   saveConfig: (): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('save-config'),
 
   // OBD2 connection
-  obdConnect: (btAddress?: string): Promise<void> => ipcRenderer.invoke('obd-connect', btAddress),
+  obdConnect: (devicePath?: string): Promise<void> => ipcRenderer.invoke('obd-connect', devicePath),
   obdConnectStub: (): Promise<void> => ipcRenderer.invoke('obd-connect-stub'),
   obdDisconnect: (): Promise<void> => ipcRenderer.invoke('obd-disconnect'),
   obdGetState: (): Promise<string> => ipcRenderer.invoke('obd-get-state'),
@@ -62,6 +62,26 @@ const obd2API = {
     ipcRenderer.invoke('theme-list'),
   themeLoad: (themeId: string): Promise<unknown> => ipcRenderer.invoke('theme-load', themeId),
 
+  // Theme Editor
+  themeGetDirs: (): Promise<Array<{ path: string; label: string }>> =>
+    ipcRenderer.invoke('theme-get-dirs'),
+  themeCreate: (name: string, targetDir?: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('theme-create', name, targetDir),
+  themeDuplicate: (sourceId: string, newName: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('theme-duplicate', sourceId, newName),
+  themeDelete: (themeId: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('theme-delete', themeId),
+  themeRename: (themeId: string, newName: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('theme-rename', themeId, newName),
+  themeSaveProperties: (themeId: string, properties: Record<string, string>): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('theme-save-properties', themeId, properties),
+  themePickFile: (filters: Array<{ name: string; extensions: string[] }>): Promise<{ success: boolean; filePath?: string; canceled?: boolean }> =>
+    ipcRenderer.invoke('theme-pick-file', filters),
+  themeCopyAsset: (themeId: string, sourcePath: string, assetName: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('theme-copy-asset', themeId, sourcePath, assetName),
+  themeDeleteAsset: (themeId: string, assetName: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('theme-delete-asset', themeId, assetName),
+
   // Bluetooth
   btScan: (): Promise<Array<{ address: string; name: string; paired: boolean; connected: boolean; rssi?: number }>> =>
     ipcRenderer.invoke('bt-scan'),
@@ -70,6 +90,12 @@ const obd2API = {
   btDisconnect: (address: string): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('bt-disconnect', address),
   btGetDevices: (): Promise<Array<{ address: string; name: string; paired: boolean; connected: boolean; rssi?: number }>> =>
     ipcRenderer.invoke('bt-get-devices'),
+  btRfcommBind: (address: string): Promise<{ success: boolean; devicePath?: string; error?: string }> =>
+    ipcRenderer.invoke('bt-rfcomm-bind', address),
+
+  // Serial devices
+  serialScan: (): Promise<Array<{ path: string; type: string }>> =>
+    ipcRenderer.invoke('serial-scan'),
 
   // WiFi
   wifiScan: (): Promise<Array<{ ssid: string; signal: number; security: string; connected: boolean }>> =>

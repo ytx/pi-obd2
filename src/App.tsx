@@ -8,6 +8,9 @@ import SystemSettingsScreen from '@/components/settings/SystemSettingsScreen';
 import DisplaySettingsScreen from '@/components/settings/DisplaySettingsScreen';
 import LayoutEditorScreen from '@/components/settings/LayoutEditorScreen';
 import DevSettingsScreen from '@/components/settings/DevSettingsScreen';
+import ThemeEditorScreen from '@/components/settings/ThemeEditorScreen';
+import BluetoothScreen from '@/components/settings/BluetoothScreen';
+import OBD2Screen from '@/components/settings/OBD2Screen';
 
 function App() {
   const { currentScreen, setHostname } = useAppStore();
@@ -42,6 +45,9 @@ function App() {
       {currentScreen === 'display-settings' && <DisplaySettingsScreen />}
       {currentScreen === 'layout-editor' && <LayoutEditorScreen />}
       {currentScreen === 'dev-settings' && <DevSettingsScreen />}
+      {currentScreen === 'theme-editor' && <ThemeEditorScreen />}
+      {currentScreen === 'bluetooth' && <BluetoothScreen />}
+      {currentScreen === 'obd2' && <OBD2Screen />}
     </div>
   );
 }

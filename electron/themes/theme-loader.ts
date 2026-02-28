@@ -40,7 +40,7 @@ export interface ThemeData {
  *
  * 各サブディレクトリが1テーマ。properties.txt 必須。
  */
-function getThemesDir(): string {
+export function getThemesDir(): string {
   // dist-electron/themes/ → ../../themes/
   return path.join(__dirname, '..', '..', 'themes');
 }
@@ -123,7 +123,7 @@ export function scanThemes(extraDirs?: string[]): ThemeInfo[] {
 }
 
 /** Resolve theme directory from themeId (handles usb: prefix) */
-function resolveThemeDir(themeId: string, extraDirs?: string[]): string | null {
+export function resolveThemeDir(themeId: string, extraDirs?: string[]): string | null {
   if (themeId.startsWith('usb:') && extraDirs) {
     const name = themeId.slice(4);
     for (const dir of extraDirs) {

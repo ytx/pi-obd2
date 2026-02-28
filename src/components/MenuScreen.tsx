@@ -9,11 +9,11 @@ interface TileConfig {
 
 const tiles: (TileConfig | null)[] = [
   null,
-  null,
-  null,
+  { label: 'Bluetooth', screen: 'bluetooth', color: 'bg-blue-700' },
+  { label: 'OBD2', screen: 'obd2', color: 'bg-green-700' },
   { label: 'Display', screen: 'display-settings', color: 'bg-indigo-700' },
   { label: 'Layout', screen: 'layout-editor', color: 'bg-purple-700' },
-  null,
+  { label: 'Theme', screen: 'theme-editor', color: 'bg-amber-700' },
   { label: 'System', screen: 'system-settings', color: 'bg-teal-700' },
   null,
   { label: 'Dev', screen: 'dev-settings', color: 'bg-gray-700' },

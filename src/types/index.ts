@@ -1,4 +1,4 @@
-export type Screen = 'dashboard' | 'menu' | 'system-settings' | 'display-settings' | 'layout-editor' | 'dev-settings';
+export type Screen = 'dashboard' | 'menu' | 'system-settings' | 'display-settings' | 'layout-editor' | 'dev-settings' | 'theme-editor' | 'bluetooth' | 'obd2';
 
 export interface SystemStats {
   cpuUsage: number;
@@ -154,6 +154,12 @@ export interface UsbResult {
   success: boolean;
   mountpoint?: string;
   error?: string;
+}
+
+// Serial device types
+export interface SerialDevice {
+  path: string;        // e.g. '/dev/rfcomm0', '/dev/ttyUSB0'
+  type: 'rfcomm' | 'ttyUSB' | 'ttyACM' | 'ttyS';
 }
 
 // GPIO types

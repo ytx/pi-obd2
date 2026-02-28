@@ -7,8 +7,8 @@ function BluetoothSection() {
   const [scanning, setScanning] = useState(false);
   const [busyAddress, setBusyAddress] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const obdBtAddress = useOBDStore((s) => s.obdBtAddress);
-  const setObdBtAddress = useOBDStore((s) => s.setObdBtAddress);
+  const obdBtAddress = useOBDStore((s) => s.obdDevicePath);
+  const setObdBtAddress = useOBDStore((s) => s.setObdDevicePath);
 
   const handleScan = async () => {
     setScanning(true);

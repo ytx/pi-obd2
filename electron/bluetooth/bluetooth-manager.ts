@@ -1,4 +1,5 @@
-import { execFile, spawn, ChildProcess } from 'child_process';
+import { execFile, execSync, spawn, ChildProcess } from 'child_process';
+import fs from 'fs';
 
 interface BTDevice {
   address: string;
@@ -189,6 +190,38 @@ export class BluetoothManager {
       const msg = e instanceof Error ? e.message : String(e);
       console.error('BT disconnect failed:', msg);
       return { success: false, error: msg };
+    }
+  }
+
+  async rfcommBind(btAddress: string, channel = 0): Promise<{ success: boolean; devicePath?: string; error?: string }> {
+    const devPath = `/dev/rfcomm${channel}`;
+    try {
+      // Release existing binding (ignore errors)
+      try { execSync(`sudo rfcomm release ${channel}`, { stdio: 'pipe' }); } catch { /* ignore */ }
+
+      // Bind
+      execSync(`sudo rfcomm bind ${channel} ${btAddress}`, { stdio: 'pipe' });
+
+      // Wait for device to appear
+      for (let i = 0; i < 10; i++) {
+        if (fs.existsSync(devPath)) break;
+        execSync('sleep 0.1');
+      }
+      if (!fs.existsSync(devPath)) {
+        return { success: false, error: `${devPath} not found after rfcomm bind` };
+      }
+
+      // chown to current user
+      try {
+        const uid = process.getuid?.() ?? 1000;
+        const gid = process.getgid?.() ?? 1000;
+        execSync(`sudo chown ${uid}:${gid} ${devPath}`, { stdio: 'pipe' });
+      } catch { /* ignore */ }
+
+      return { success: true, devicePath: devPath };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { success: false, error: `rfcomm bind failed: ${msg}` };
     }
   }
 }

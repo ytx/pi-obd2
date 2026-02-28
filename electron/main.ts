@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
@@ -8,7 +8,7 @@ import { ELM327Source } from './obd/elm327-source';
 import { DataSource } from './obd/data-source';
 import { getAllPidInfos } from './obd/pids';
 import { StubPidConfig, StubProfileName } from './obd/types';
-import { scanThemes, loadTheme } from './themes/theme-loader';
+import { scanThemes, loadTheme, resolveThemeDir, getThemesDir } from './themes/theme-loader';
 import { BluetoothManager } from './bluetooth/bluetooth-manager';
 import { WiFiManager } from './network/wifi-manager';
 import { GpioManager } from './gpio/gpio-manager';
@@ -158,10 +158,15 @@ function registerIpcHandlers(): void {
   });
 
   // --- OBD2 IPC ---
-  ipcMain.handle('obd-connect', async (_event, btAddress?: string) => {
-    logger.info('obd', `Connect requested (btAddress=${btAddress ?? 'none'}, stubMode=${isStubMode})`);
-    // btAddress provided → switch to ELM327 mode if currently stub or no ELM327 instance
-    if (btAddress) {
+  ipcMain.handle('obd-connect', async (_event, devicePath?: string) => {
+    logger.info('obd', `Connect requested (devicePath=${devicePath ?? 'none'}, stubMode=${isStubMode})`);
+    // Disconnect existing connection first
+    if (dataSource && dataSource.getState() !== 'disconnected') {
+      logger.info('obd', 'Disconnecting existing connection before reconnect');
+      await dataSource.disconnect();
+    }
+    // devicePath provided → switch to ELM327 mode if currently stub or no ELM327 instance
+    if (devicePath) {
       if (isStubMode || !(dataSource instanceof ELM327Source)) {
         isStubMode = false;
         if (dataSource) {
@@ -171,21 +176,28 @@ function registerIpcHandlers(): void {
       }
     }
     const ds = getDataSource();
-    await ds.connect(btAddress ?? undefined);
-    logger.info('obd', `Connected (mode=${isStubMode ? 'stub' : 'elm327'})`);
+    // Fire-and-forget: connection progress is reported via obd-connection-change events
+    ds.connect(devicePath ?? undefined).then(() => {
+      logger.info('obd', `Connected (mode=${isStubMode ? 'stub' : 'elm327'})`);
+    }).catch((err) => {
+      logger.error('obd', `Connect failed: ${err}`);
+    });
   });
 
-  ipcMain.handle('obd-connect-stub', async () => {
+  ipcMain.handle('obd-connect-stub', () => {
     logger.info('obd', 'Stub connect requested');
     if (dataSource) {
-      await dataSource.disconnect();
       dataSource.dispose();
       dataSource = null;
     }
     isStubMode = true;
     const ds = getDataSource();
-    await ds.connect();
-    logger.info('obd', 'Connected (mode=stub)');
+    // Fire-and-forget
+    ds.connect().then(() => {
+      logger.info('obd', 'Connected (mode=stub)');
+    }).catch((err) => {
+      logger.error('obd', `Stub connect failed: ${err}`);
+    });
   });
 
   ipcMain.handle('obd-disconnect', async () => {
@@ -370,6 +382,35 @@ function registerIpcHandlers(): void {
     try { return await btManager.getDevices(); } catch { return []; }
   });
 
+  ipcMain.handle('bt-rfcomm-bind', async (_event, address: string) => {
+    try { return await btManager.rfcommBind(address); } catch (e) { return { success: false, error: String(e) }; }
+  });
+
+  // --- Serial device scan IPC ---
+  ipcMain.handle('serial-scan', () => {
+    const devices: { path: string; type: string }[] = [];
+    try {
+      const entries = fs.readdirSync('/dev');
+      for (const name of entries) {
+        let type: string | null = null;
+        if (/^rfcomm\d+$/.test(name)) type = 'rfcomm';
+        else if (/^ttyUSB\d+$/.test(name)) type = 'ttyUSB';
+        else if (/^ttyACM\d+$/.test(name)) type = 'ttyACM';
+        else if (/^ttyS\d+$/.test(name)) {
+          // Only include real serial ports (filter out virtual)
+          const sysPath = `/sys/class/tty/${name}/device`;
+          if (fs.existsSync(sysPath)) type = 'ttyS';
+        }
+        if (type) {
+          devices.push({ path: `/dev/${name}`, type });
+        }
+      }
+    } catch (err) {
+      logger.error('serial', `serial-scan: ${err}`);
+    }
+    return devices;
+  });
+
   // --- WiFi IPC ---
   ipcMain.handle('wifi-scan', async () => {
     try { return await wifiManager.scan(); } catch { return []; }
@@ -412,6 +453,142 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('is-usb-mounted', () => {
     return usbMounted;
+  });
+
+  // --- Theme Editor IPC ---
+  ipcMain.handle('theme-get-dirs', () => {
+    const dirs: { path: string; label: string }[] = [];
+    if (!app.isPackaged) {
+      dirs.push({ path: getThemesDir(), label: 'Local (themes/)' });
+    }
+    if (usbMounted) {
+      const usbThemes = path.join(USB_MOUNT_POINT, 'themes');
+      if (fs.existsSync(usbThemes)) {
+        dirs.push({ path: usbThemes, label: 'USB' });
+      }
+    }
+    return dirs;
+  });
+
+  ipcMain.handle('theme-create', (_event, name: string, targetDir?: string) => {
+    try {
+      const baseDir = targetDir ?? getThemesDir();
+      const themeDir = path.join(baseDir, name);
+      if (fs.existsSync(themeDir)) {
+        return { success: false, error: 'Theme directory already exists' };
+      }
+      fs.mkdirSync(themeDir, { recursive: true });
+      fs.writeFileSync(path.join(themeDir, 'properties.txt'), '# Theme properties\n', 'utf-8');
+      logger.info('theme-editor', `Created theme: ${name}`);
+      return { success: true };
+    } catch (err) {
+      logger.error('theme-editor', `Create theme failed: ${err}`);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle('theme-duplicate', (_event, sourceId: string, newName: string) => {
+    try {
+      const sourceDir = resolveThemeDir(sourceId, getUsbThemeDirs());
+      if (!sourceDir) return { success: false, error: 'Source theme not found' };
+      const parentDir = path.dirname(sourceDir);
+      const destDir = path.join(parentDir, newName);
+      if (fs.existsSync(destDir)) {
+        return { success: false, error: 'Theme directory already exists' };
+      }
+      fs.cpSync(sourceDir, destDir, { recursive: true });
+      logger.info('theme-editor', `Duplicated ${sourceId} → ${newName}`);
+      return { success: true };
+    } catch (err) {
+      logger.error('theme-editor', `Duplicate theme failed: ${err}`);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle('theme-delete', (_event, themeId: string) => {
+    try {
+      const themeDir = resolveThemeDir(themeId, getUsbThemeDirs());
+      if (!themeDir) return { success: false, error: 'Theme not found' };
+      fs.rmSync(themeDir, { recursive: true, force: true });
+      logger.info('theme-editor', `Deleted theme: ${themeId}`);
+      return { success: true };
+    } catch (err) {
+      logger.error('theme-editor', `Delete theme failed: ${err}`);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle('theme-rename', (_event, themeId: string, newName: string) => {
+    try {
+      const themeDir = resolveThemeDir(themeId, getUsbThemeDirs());
+      if (!themeDir) return { success: false, error: 'Theme not found' };
+      const parentDir = path.dirname(themeDir);
+      const newDir = path.join(parentDir, newName);
+      if (fs.existsSync(newDir)) {
+        return { success: false, error: 'Theme directory already exists' };
+      }
+      fs.renameSync(themeDir, newDir);
+      logger.info('theme-editor', `Renamed ${themeId} → ${newName}`);
+      return { success: true };
+    } catch (err) {
+      logger.error('theme-editor', `Rename theme failed: ${err}`);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle('theme-save-properties', (_event, themeId: string, properties: Record<string, string>) => {
+    try {
+      const themeDir = resolveThemeDir(themeId, getUsbThemeDirs());
+      if (!themeDir) return { success: false, error: 'Theme not found' };
+      const lines = Object.entries(properties).map(([k, v]) => `${k}=${v}`);
+      fs.writeFileSync(path.join(themeDir, 'properties.txt'), lines.join('\n') + '\n', 'utf-8');
+      logger.info('theme-editor', `Saved properties for ${themeId} (${lines.length} entries)`);
+      return { success: true };
+    } catch (err) {
+      logger.error('theme-editor', `Save properties failed: ${err}`);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle('theme-pick-file', async (_event, filters: { name: string; extensions: string[] }[]) => {
+    if (!mainWindow) return { success: false, error: 'No window' };
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      filters,
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, canceled: true };
+    }
+    return { success: true, filePath: result.filePaths[0] };
+  });
+
+  ipcMain.handle('theme-copy-asset', (_event, themeId: string, sourcePath: string, assetName: string) => {
+    try {
+      const themeDir = resolveThemeDir(themeId, getUsbThemeDirs());
+      if (!themeDir) return { success: false, error: 'Theme not found' };
+      fs.copyFileSync(sourcePath, path.join(themeDir, assetName));
+      logger.info('theme-editor', `Copied asset ${assetName} to ${themeId}`);
+      return { success: true };
+    } catch (err) {
+      logger.error('theme-editor', `Copy asset failed: ${err}`);
+      return { success: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle('theme-delete-asset', (_event, themeId: string, assetName: string) => {
+    try {
+      const themeDir = resolveThemeDir(themeId, getUsbThemeDirs());
+      if (!themeDir) return { success: false, error: 'Theme not found' };
+      const assetPath = path.join(themeDir, assetName);
+      if (fs.existsSync(assetPath)) {
+        fs.unlinkSync(assetPath);
+        logger.info('theme-editor', `Deleted asset ${assetName} from ${themeId}`);
+      }
+      return { success: true };
+    } catch (err) {
+      logger.error('theme-editor', `Delete asset failed: ${err}`);
+      return { success: false, error: String(err) };
+    }
   });
 
   // --- GPIO IPC ---
@@ -482,11 +659,24 @@ app.whenReady().then(() => {
   createWindow();
 });
 
-app.on('window-all-closed', () => {
+function cleanupAndQuit(): void {
   if (dataSource) {
     dataSource.dispose();
     dataSource = null;
   }
   gpioManager.dispose();
+}
+
+app.on('window-all-closed', () => {
+  cleanupAndQuit();
   app.quit();
 });
+
+// Ensure ELM327 DTR reset on SIGINT/SIGTERM (e.g. Ctrl+C)
+for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(sig, () => {
+    logger.info('app', `Received ${sig}, cleaning up...`);
+    cleanupAndQuit();
+    process.exit(0);
+  });
+}

@@ -1,21 +1,11 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useAppStore } from '@/stores/useAppStore';
-import { useOBDStore } from '@/stores/useOBDStore';
-import { OBDConnectionState } from '@/types';
-import BluetoothSection from '@/components/settings/BluetoothSection';
 import WiFiSection from '@/components/settings/WiFiSection';
 import UsbSection from '@/components/settings/UsbSection';
 import GpioSection from '@/components/settings/GpioSection';
 
 function SystemSettingsScreen() {
   const { hostname, systemStats, setScreen, setSystemStats } = useAppStore();
-  const {
-    connectionState,
-    isStubMode,
-    obdBtAddress,
-    setConnectionState,
-    setStubMode,
-  } = useOBDStore();
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [usbMounted, setUsbMounted] = useState(false);
   const [logSaveStatus, setLogSaveStatus] = useState<string | null>(null);
@@ -46,39 +36,6 @@ function SystemSettingsScreen() {
     const id = setInterval(poll, 5000);
     return () => clearInterval(id);
   }, []);
-
-  useEffect(() => {
-    if (!window.obd2API) return;
-    window.obd2API.obdIsStubMode().then(setStubMode);
-    window.obd2API.obdGetState().then((s) => setConnectionState(s as OBDConnectionState));
-  }, [setStubMode, setConnectionState]);
-
-  const handleConnect = async () => {
-    try {
-      await window.obd2API.obdConnect(obdBtAddress ?? undefined);
-      // Refresh stub mode state (may have switched to ELM327)
-      window.obd2API.obdIsStubMode().then(setStubMode);
-    } catch (e) {
-      console.error('Connect failed:', e);
-    }
-  };
-
-  const handleConnectStub = async () => {
-    try {
-      await window.obd2API.obdConnectStub();
-      window.obd2API.obdIsStubMode().then(setStubMode);
-    } catch (e) {
-      console.error('Stub connect failed:', e);
-    }
-  };
-
-  const handleDisconnect = async () => {
-    try {
-      await window.obd2API.obdDisconnect();
-    } catch (e) {
-      console.error('Disconnect failed:', e);
-    }
-  };
 
   const handleSaveConfig = async () => {
     if (configSaveStatus) return; // prevent double-click
@@ -113,13 +70,6 @@ function SystemSettingsScreen() {
     return `${h}h ${m}m`;
   };
 
-  const stateColor: Record<string, string> = {
-    disconnected: 'text-obd-dim',
-    connecting: 'text-yellow-400',
-    connected: 'text-green-400',
-    error: 'text-obd-danger',
-  };
-
   return (
     <div className="h-full flex flex-col bg-obd-dark p-6">
       <div className="flex items-center justify-between mb-6">
@@ -134,54 +84,6 @@ function SystemSettingsScreen() {
       </div>
 
       <div className="flex-1 overflow-auto space-y-4">
-        {/* OBD2 Connection */}
-        <div className="bg-obd-surface rounded-lg p-4">
-          <h2 className="text-lg font-semibold text-obd-primary mb-3">OBD2 Connection</h2>
-          <div className="flex items-center gap-4 mb-3">
-            <span className={`font-medium ${stateColor[connectionState] ?? 'text-obd-dim'}`}>
-              {connectionState.toUpperCase()}
-            </span>
-            {isStubMode && (
-              <span className="text-xs bg-yellow-800 text-yellow-200 px-2 py-1 rounded">STUB MODE</span>
-            )}
-            {obdBtAddress && (
-              <span className={`text-xs px-2 py-1 rounded ${isStubMode ? 'bg-gray-700 text-gray-300' : 'bg-green-900 text-green-200'}`}>
-                ELM327: {obdBtAddress}
-              </span>
-            )}
-          </div>
-          <div className="flex gap-3">
-            {connectionState === 'disconnected' || connectionState === 'error' ? (
-              <>
-                <button
-                  onClick={handleConnect}
-                  className="px-4 py-2 bg-green-700 text-white rounded-lg hover:bg-green-600 transition-colors"
-                >
-                  Connect
-                </button>
-                <button
-                  onClick={handleConnectStub}
-                  className="px-4 py-2 bg-yellow-800 text-yellow-200 rounded-lg hover:bg-yellow-700 transition-colors"
-                >
-                  Stub
-                </button>
-              </>
-            ) : connectionState === 'connected' ? (
-              <button
-                onClick={handleDisconnect}
-                className="px-4 py-2 bg-obd-surface text-obd-warn border border-obd-dim rounded-lg hover:bg-obd-dim/30 transition-colors"
-              >
-                Disconnect
-              </button>
-            ) : (
-              <span className="text-yellow-400 text-sm">Connecting...</span>
-            )}
-          </div>
-        </div>
-
-        {/* Bluetooth */}
-        <BluetoothSection />
-
         {/* WiFi */}
         <WiFiSection />
 

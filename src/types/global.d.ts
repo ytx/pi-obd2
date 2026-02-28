@@ -1,4 +1,4 @@
-import { SystemStats, OBDPidInfo, OBDValue, ThemeInfo, ThemeData, BTDevice, WiFiNetwork, UsbDevice, UsbResult, GpioChangeEvent } from './index';
+import { SystemStats, OBDPidInfo, OBDValue, ThemeInfo, ThemeData, BTDevice, WiFiNetwork, UsbDevice, UsbResult, GpioChangeEvent, SerialDevice } from './index';
 
 declare global {
   const __GIT_COMMIT__: string;
@@ -13,7 +13,7 @@ declare global {
       saveConfig: () => Promise<{ success: boolean; error?: string }>;
 
       // OBD2 connection
-      obdConnect: (btAddress?: string) => Promise<void>;
+      obdConnect: (devicePath?: string) => Promise<void>;
       obdConnectStub: () => Promise<void>;
       obdDisconnect: () => Promise<void>;
       obdGetState: () => Promise<string>;
@@ -42,12 +42,27 @@ declare global {
       themeList: () => Promise<ThemeInfo[]>;
       themeLoad: (themeId: string) => Promise<ThemeData | null>;
 
+      // Theme Editor
+      themeGetDirs: () => Promise<Array<{ path: string; label: string }>>;
+      themeCreate: (name: string, targetDir?: string) => Promise<{ success: boolean; error?: string }>;
+      themeDuplicate: (sourceId: string, newName: string) => Promise<{ success: boolean; error?: string }>;
+      themeDelete: (themeId: string) => Promise<{ success: boolean; error?: string }>;
+      themeRename: (themeId: string, newName: string) => Promise<{ success: boolean; error?: string }>;
+      themeSaveProperties: (themeId: string, properties: Record<string, string>) => Promise<{ success: boolean; error?: string }>;
+      themePickFile: (filters: Array<{ name: string; extensions: string[] }>) => Promise<{ success: boolean; filePath?: string; canceled?: boolean }>;
+      themeCopyAsset: (themeId: string, sourcePath: string, assetName: string) => Promise<{ success: boolean; error?: string }>;
+      themeDeleteAsset: (themeId: string, assetName: string) => Promise<{ success: boolean; error?: string }>;
+
       // Bluetooth
       btScan: () => Promise<BTDevice[]>;
       btPair: (address: string) => Promise<{ success: boolean; error?: string }>;
       btConnect: (address: string) => Promise<{ success: boolean; error?: string }>;
       btDisconnect: (address: string) => Promise<{ success: boolean; error?: string }>;
       btGetDevices: () => Promise<BTDevice[]>;
+      btRfcommBind: (address: string) => Promise<{ success: boolean; devicePath?: string; error?: string }>;
+
+      // Serial devices
+      serialScan: () => Promise<SerialDevice[]>;
 
       // WiFi
       wifiScan: () => Promise<WiFiNetwork[]>;
