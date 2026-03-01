@@ -75,6 +75,8 @@ declare global {
       // GPIO
       gpioSetup: (pins: number[]) => Promise<void>;
       gpioRead: (pin: number) => Promise<number>;
+      gpioSet: (pin: number, value: number) => Promise<void>;
+      gpioUsbReset: (pin: number) => Promise<void>;
       onGpioChange: (callback: (event: GpioChangeEvent) => void) => () => void;
 
       // Logs

@@ -625,6 +625,17 @@ function registerIpcHandlers(): void {
   ipcMain.handle('gpio-read', (_event, pin: number) => {
     return gpioManager.read(pin);
   });
+
+  ipcMain.handle('gpio-set', (_event, pin: number, value: number) => {
+    gpioManager.set(pin, value);
+  });
+
+  ipcMain.handle('gpio-usb-reset', async (_event, pin: number) => {
+    logger.info('gpio', `USB reset: pin ${pin} LOW → 1s → HIGH`);
+    gpioManager.set(pin, 0);
+    await new Promise((r) => setTimeout(r, 1000));
+    gpioManager.set(pin, 1);
+  });
 }
 
 /** Auto-mount USB if a device is present (for theme/config restoration after reboot) */

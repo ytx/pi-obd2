@@ -7,6 +7,9 @@ interface GpioState {
   reversePin: number | null;
   illuminationThemeId: string | null;
   reverseBoardId: string | null;
+  usbResetPin: number | null;
+  illuminationActiveHigh: boolean;
+  reverseActiveHigh: boolean;
 
   // Runtime state (not persisted)
   illuminationActive: boolean;
@@ -16,6 +19,9 @@ interface GpioState {
   setReversePin: (pin: number | null) => void;
   setIlluminationThemeId: (themeId: string | null) => void;
   setReverseBoardId: (boardId: string | null) => void;
+  setUsbResetPin: (pin: number | null) => void;
+  setIlluminationActiveHigh: (v: boolean) => void;
+  setReverseActiveHigh: (v: boolean) => void;
   setIlluminationActive: (active: boolean) => void;
   setReverseActive: (active: boolean) => void;
 }
@@ -27,9 +33,15 @@ export const useGpioStore = create<GpioState>()(
       reversePin: 27,
       illuminationThemeId: null,
       reverseBoardId: null,
+      usbResetPin: 26,
+      illuminationActiveHigh: true,
+      reverseActiveHigh: true,
       illuminationActive: false,
       reverseActive: false,
 
+      setUsbResetPin: (pin) => set({ usbResetPin: pin }),
+      setIlluminationActiveHigh: (v) => set({ illuminationActiveHigh: v }),
+      setReverseActiveHigh: (v) => set({ reverseActiveHigh: v }),
       setIlluminationPin: (pin) => set({ illuminationPin: pin }),
       setReversePin: (pin) => set({ reversePin: pin }),
       setIlluminationThemeId: (themeId) => set({ illuminationThemeId: themeId }),
@@ -44,6 +56,9 @@ export const useGpioStore = create<GpioState>()(
         reversePin: state.reversePin,
         illuminationThemeId: state.illuminationThemeId,
         reverseBoardId: state.reverseBoardId,
+        usbResetPin: state.usbResetPin,
+        illuminationActiveHigh: state.illuminationActiveHigh,
+        reverseActiveHigh: state.reverseActiveHigh,
       }),
     },
   ),

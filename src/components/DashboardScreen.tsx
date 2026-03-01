@@ -26,6 +26,8 @@ function DashboardScreen() {
   // GPIO saved state refs (for restoring on OFF)
   const savedThemeIdRef = useRef<string | null | undefined>(undefined);
   const savedBoardIdRef = useRef<string | null>(null);
+  // USB reset: only attempt once per error cycle (reset on successful connect)
+  const usbResetAttemptedRef = useRef(false);
 
   // Initialize: load available PIDs, stub mode, profiles, themes, register event listeners
   // Then auto-connect after hydration
@@ -40,9 +42,26 @@ function DashboardScreen() {
     window.obd2API.themeList().then(setAvailableThemes);
 
     const removeData = window.obd2API.onOBDData(updateValues);
-    const removeConn = window.obd2API.onOBDConnectionChange((s) =>
-      setConnectionState(s as OBDConnectionState),
-    );
+    const removeConn = window.obd2API.onOBDConnectionChange((s) => {
+      setConnectionState(s as OBDConnectionState);
+      if (s === 'connected') {
+        usbResetAttemptedRef.current = false;
+      }
+      if (s === 'error' && !usbResetAttemptedRef.current) {
+        const { usbResetPin } = useGpioStore.getState();
+        const { obdDevicePath } = useOBDStore.getState();
+        if (usbResetPin !== null && obdDevicePath) {
+          usbResetAttemptedRef.current = true;
+          window.obd2API.gpioUsbReset(usbResetPin).then(() =>
+            new Promise<void>((r) => setTimeout(r, 2000)),
+          ).then(() => {
+            if (!cancelled) {
+              window.obd2API.obdConnect(obdDevicePath).catch(() => {});
+            }
+          });
+        }
+      }
+    });
 
     // Wait for OBDStore hydration then auto-connect (only if disconnected)
     // cancelled flag prevents duplicate connect from React StrictMode double-mount
@@ -75,22 +94,28 @@ function DashboardScreen() {
 
     // Setup GPIO pins after hydration
     waitForHydration(useGpioStore).then(() => {
-      const { illuminationPin, reversePin } = useGpioStore.getState();
+      const { illuminationPin, reversePin, usbResetPin } = useGpioStore.getState();
       const pins: number[] = [];
       if (illuminationPin !== null) pins.push(illuminationPin);
       if (reversePin !== null) pins.push(reversePin);
       if (pins.length > 0) {
         window.obd2API.gpioSetup(pins);
       }
+      // Initialize USB reset pin to HIGH (output pin, not monitored by gpiomon)
+      if (usbResetPin !== null) {
+        window.obd2API.gpioSet(usbResetPin, 1);
+      }
     });
 
     const removeGpio = window.obd2API.onGpioChange(async (event: GpioChangeEvent) => {
       const gpioState = useGpioStore.getState();
-      const { illuminationPin, reversePin, illuminationThemeId, reverseBoardId } = gpioState;
+      const { illuminationPin, reversePin, illuminationThemeId, reverseBoardId,
+              illuminationActiveHigh, reverseActiveHigh } = gpioState;
 
       // Illumination
       if (event.pin === illuminationPin) {
-        if (event.value === 1 && illuminationThemeId) {
+        const isOn = illuminationActiveHigh ? event.value === 1 : event.value === 0;
+        if (isOn && illuminationThemeId) {
           // ON — save current theme and switch
           savedThemeIdRef.current = useThemeStore.getState().currentThemeId;
           useGpioStore.getState().setIlluminationActive(true);
@@ -100,7 +125,7 @@ function DashboardScreen() {
           } catch (e) {
             console.warn('GPIO illumination theme load failed:', e);
           }
-        } else if (event.value === 0) {
+        } else if (!isOn) {
           // OFF — restore saved theme
           useGpioStore.getState().setIlluminationActive(false);
           const saved = savedThemeIdRef.current;
@@ -120,12 +145,13 @@ function DashboardScreen() {
 
       // Reverse
       if (event.pin === reversePin) {
-        if (event.value === 1 && reverseBoardId) {
+        const isOn = reverseActiveHigh ? event.value === 1 : event.value === 0;
+        if (isOn && reverseBoardId) {
           // ON — save current board and switch
           savedBoardIdRef.current = useBoardStore.getState().currentBoardId;
           useGpioStore.getState().setReverseActive(true);
           useBoardStore.getState().setCurrentBoardId(reverseBoardId);
-        } else if (event.value === 0) {
+        } else if (!isOn) {
           // OFF — restore saved board
           useGpioStore.getState().setReverseActive(false);
           const saved = savedBoardIdRef.current;

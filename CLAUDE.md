@@ -37,7 +37,7 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 - `themes/theme-loader.ts` - テーマディレクトリのスキャン・読込（複数ディレクトリ対応、USB テーマ `usb:` プレフィックス）
 - `bluetooth/bluetooth-manager.ts` - BT スキャン・ペアリング・接続・rfcomm bind（bluetoothctl ラッパー）
 - `network/wifi-manager.ts` - WiFi スキャン・接続（nmcli ラッパー）
-- `gpio/gpio-manager.ts` - GPIO 監視（gpiomon/gpioget ラッパー、edge 検出、デバウンス 50ms、非対応環境ではスタブ）
+- `gpio/gpio-manager.ts` - GPIO 監視（gpiomon/gpioget/gpioset ラッパー、edge 検出、デバウンス 50ms、非対応環境ではスタブ）
 
 ### React レンダラ (`src/`)
 
@@ -60,7 +60,7 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 - `components/settings/BluetoothSection.tsx` - BT 設定（スキャン・ペアリング）
 - `components/settings/WiFiSection.tsx` - WiFi 設定
 - `components/settings/UsbSection.tsx` - USB メモリ（検出・マウント・設定エクスポート/インポート）
-- `components/settings/GpioSection.tsx` - GPIO 設定（イルミ・リバース ピン/テーマ/ボード選択）
+- `components/settings/GpioSection.tsx` - GPIO 設定（イルミ・リバース ピン/論理/テーマ/ボード選択、USB リセットピン）
 - `components/settings/LogSection.tsx` - ログビューア（フィルター、自動スクロール、2秒ポーリング）
 - `components/settings/LayoutEditorScreen.tsx` - レイアウトエディタ（64x36 グリッド、スロット追加/削除/位置変更/z-order）
 - `components/settings/ThemeSection.tsx` - テーマ選択（スクリーンショット付き）
@@ -75,7 +75,7 @@ Raspberry Pi 4 (4GB) 車載 OBD2 ダッシュボードアプリケーション�
 - `stores/hydration.ts` - `waitForHydration(store)` ユーティリティ（Zustand persist 非同期ハイドレーション待ち）
 - `stores/useBoardStore.ts` - ボード・レイアウト・パネル定義管理
 - `stores/useThemeStore.ts` - テーマ状態（設定、アセット URL、フォント）
-- `stores/useGpioStore.ts` - GPIO 状態（ピン設定、イルミ/リバース連動設定）
+- `stores/useGpioStore.ts` - GPIO 状態（ピン設定、アクティブ論理、イルミ/リバース連動設定、USB リセットピン）
 - `config/defaults.ts` - デフォルト設定（メーター・グラフ・数値・レイアウト・ボード）
 - `types/index.ts` - 全型定義
 
@@ -142,7 +142,8 @@ PanelSlot.tsx でフォールバックチェーン: スロットオーバーラ�
 - 起動時自動接続（既に接続済みならスキップ、`cancelled` フラグで StrictMode 二重呼出し防止）
 - `sudo rfcomm bind` は Bluetooth 画面（`BluetoothManager.rfcommBind()`）で実行、`sudo chown` で所有権変更
 - OBD2 画面でデバイス選択 → 接続、Simulator も選択可能
-- IPC `obd-connect` / `obd-connect-stub` は fire-and-forget（接続進捗は `obd-connection-change` イPC イベントで通知）
+- IPC `obd-connect` / `obd-connect-stub` は fire-and-forget（接続進捗は `obd-connection-change` IPC イベントで通知）
+- 接続エラー時、`usbResetPin` が設定されていれば GPIO で USB 電源リセット（1秒 LOW → HIGH）→ 2秒待ち → 自動再接続（1回のみ、成功でリセット）
 
 **ELM327 シリアルポートライフサイクル:**
 ```
@@ -167,6 +168,11 @@ open (O_RDWR | O_NONBLOCK)
 - 全非同期操作（`elmInit`, `sendCommand`, `drainUntilQuiet`, `pollLoop`）が `gen` 引数を受け取り、`gen !== this.generation` で中断
 - `disconnect()` / `dispose()` も `generation++` で進行中の操作を無効化
 - 同一 ELM327Source インスタンスの再利用時に、古い非同期操作が新しい接続の fd を汚染するのを防止
+
+**OBD2 接続の二重接続防止:**
+- main プロセス側: `obd-connect` ハンドラが `dataSource.getState() !== 'disconnected'` のとき先に `disconnect()` してから接続
+- renderer 側: `obdGetState()` で現在の状態を確認し、`disconnected` か `error` のときだけ `obdConnect()` を呼ぶ
+- 画面遷移（ダッシュボード → 設定 → ダッシュボード）中に接続中（`connecting`）であればスキップされ二重接続にならない
 
 ### Torque テーマ
 
@@ -297,7 +303,7 @@ Zustand `persist` ミドルウェアで以下を永続化:
 | `useBoardStore` | `obd2-boards` (v2) | `boards`, `layouts`, `currentBoardId`, `screenPadding` | `panelDefs`（静的デフォルト） |
 | `useThemeStore` | `obd2-theme` | `currentThemeId` | テーマデータ・派生状態（base64 が巨大） |
 | `useOBDStore` | `obd2-bt` | `obdDevicePath` | 接続状態・ライブデータ |
-| `useGpioStore` | `obd2-gpio` | `illuminationPin`, `reversePin`, `illuminationThemeId`, `reverseBoardId` | `illuminationActive`, `reverseActive`（ランタイム） |
+| `useGpioStore` | `obd2-gpio` | `illuminationPin`, `reversePin`, `illuminationThemeId`, `reverseBoardId`, `usbResetPin`, `illuminationActiveHigh`, `reverseActiveHigh` | `illuminationActive`, `reverseActive`（ランタイム） |
 | `useAppStore` | — | なし | 全て（ランタイム情報） |
 
 - テーマは `currentThemeId` のみ保存し、起動時に `App.tsx` で `themeLoad()` → `applyTheme()` でファイルから再ロード
@@ -360,8 +366,10 @@ sonix2 の USB マウントパターンを踏襲:
 - `save-logs-usb` — USB マウントポイントにログファイル書出し
 - `log-settings` — renderer からの設定情報をログに記録
 - `is-usb-mounted` — USB マウント状態取得
-- `gpio-setup(pins)` — GPIO ピン監視開始
-- `gpio-read(pin)` — GPIO ピン現在値取得
+- `gpio-setup(pins)` — GPIO ピン監視開始（入力、gpiomon）
+- `gpio-read(pin)` — GPIO ピン現在値取得（gpioget）
+- `gpio-set(pin, value)` — GPIO ピン出力（gpioset）
+- `gpio-usb-reset(pin)` — USB 電源リセット（1秒 LOW → HIGH）
 - `gpio-change` イベント（main → renderer）— GPIO 変化通知
 - `theme-get-dirs` — 書込可能テーマディレクトリ一覧
 - `theme-create(name, targetDir?)` — 新規テーマ作成
@@ -379,12 +387,26 @@ sonix2 の USB マウントパターンを踏襲:
 
 - **イルミ（スモールライト）:** ON → 指定テーマに切替、OFF → 元テーマに復帰
 - **リバース（バックギア）:** ON → 指定ボードに切替、OFF → 元ボードに復帰
+- **USB リセット:** ELM327 接続エラー時に USB 電源線を GPIO で制御してデバイスをリセット
 
-`gpiomon` (libgpiod v2) で edge 検出（デバウンス 50ms）、`gpioget` で現在値読み取り。`gpiochip0` を使用。`gpiomon` が存在しない環境（開発 Mac 等）では警告ログのみでスタブ動作。
+`gpiomon` (libgpiod v2) で edge 検出（デバウンス 50ms）、`gpioget` で現在値読み取り、`gpioset` で出力制御。`gpiochip0` を使用。`gpiomon` が存在しない環境（開発 Mac 等）では警告ログのみでスタブ動作。
 
 **注意:** `onoff` パッケージ（sysfs ベース）はカーネル 6.12 で `EINVAL` エラーが発生するため不使用。
 
-設定画面でピン番号（GPIO 4〜27）・連動先テーマ/ボードを選択可能、`useGpioStore` で永続化。
+**アクティブ論理設定:**
+- イルミ・リバースそれぞれに `activeHigh: boolean`（デフォルト: `true`）を設定可能
+- **Active HIGH** (`true`): GPIO HIGH = ON（エミッタフォロワ等の非反転回路）
+- **Active LOW** (`false`): GPIO LOW = ON（オープンコレクタ + プルアップ構成のフォトカプラ）
+- 設定画面の Logic ドロップダウンで切替
+
+**USB リセット:**
+- USB ケーブルの電源線にスイッチが付いており、GPIO ピン（デフォルト: 26）で制御
+- 通常 HIGH、リセット時 1秒 LOW → HIGH でデバイスがリセットされる
+- ELM327 接続エラー（"No prompt from ELM327" 等）時に自動実行
+- `usbResetAttempted` ref で1回のみに制限（接続成功でリセット、次のエラーで再リトライ可能）
+- 起動時に `gpioSet(pin, 1)` で HIGH 初期化
+
+設定画面でピン番号（GPIO 4〜27）・アクティブ論理・連動先テーマ/ボードを選択可能、`useGpioStore` で永続化。
 
 ### OBD データフローとグラフ履歴
 

@@ -10,14 +10,20 @@ function GpioSection() {
   const {
     illuminationPin,
     reversePin,
+    usbResetPin,
     illuminationThemeId,
     reverseBoardId,
+    illuminationActiveHigh,
+    reverseActiveHigh,
     illuminationActive,
     reverseActive,
     setIlluminationPin,
     setReversePin,
+    setUsbResetPin,
     setIlluminationThemeId,
     setReverseBoardId,
+    setIlluminationActiveHigh,
+    setReverseActiveHigh,
   } = useGpioStore();
 
   const { availableThemes } = useThemeStore();
@@ -49,7 +55,7 @@ function GpioSection() {
             <span className="text-xs bg-yellow-800 text-yellow-200 px-2 py-0.5 rounded">ON</span>
           )}
         </div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <div>
             <label className="text-xs text-obd-dim block mb-1">GPIO Pin</label>
             <select
@@ -62,6 +68,17 @@ function GpioSection() {
                   {p === null ? 'Disabled' : `GPIO ${p}`}
                 </option>
               ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-obd-dim block mb-1">Logic</label>
+            <select
+              value={illuminationActiveHigh ? 'high' : 'low'}
+              onChange={(e) => setIlluminationActiveHigh(e.target.value === 'high')}
+              className="w-full px-2 py-1.5 text-sm bg-obd-dark text-white border border-obd-dim rounded"
+            >
+              <option value="high">Active HIGH</option>
+              <option value="low">Active LOW</option>
             </select>
           </div>
           <div>
@@ -83,14 +100,14 @@ function GpioSection() {
       </div>
 
       {/* Reverse */}
-      <div>
+      <div className="mb-4">
         <div className="flex items-center gap-2 mb-2">
           <h3 className="text-sm font-medium text-obd-accent">Reverse</h3>
           {reverseActive && (
             <span className="text-xs bg-blue-800 text-blue-200 px-2 py-0.5 rounded">ON</span>
           )}
         </div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <div>
             <label className="text-xs text-obd-dim block mb-1">GPIO Pin</label>
             <select
@@ -103,6 +120,17 @@ function GpioSection() {
                   {p === null ? 'Disabled' : `GPIO ${p}`}
                 </option>
               ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-obd-dim block mb-1">Logic</label>
+            <select
+              value={reverseActiveHigh ? 'high' : 'low'}
+              onChange={(e) => setReverseActiveHigh(e.target.value === 'high')}
+              className="w-full px-2 py-1.5 text-sm bg-obd-dark text-white border border-obd-dim rounded"
+            >
+              <option value="high">Active HIGH</option>
+              <option value="low">Active LOW</option>
             </select>
           </div>
           <div>
@@ -119,6 +147,38 @@ function GpioSection() {
                 </option>
               ))}
             </select>
+          </div>
+        </div>
+      </div>
+
+      {/* USB Reset */}
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <h3 className="text-sm font-medium text-obd-accent">USB Reset</h3>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs text-obd-dim block mb-1">GPIO Pin</label>
+            <select
+              value={usbResetPin ?? ''}
+              onChange={(e) => {
+                const pin = e.target.value === '' ? null : Number(e.target.value);
+                setUsbResetPin(pin);
+                if (pin !== null) {
+                  window.obd2API?.gpioSet(pin, 1);
+                }
+              }}
+              className="w-full px-2 py-1.5 text-sm bg-obd-dark text-white border border-obd-dim rounded"
+            >
+              {GPIO_PIN_OPTIONS.map((p) => (
+                <option key={p ?? 'off'} value={p ?? ''}>
+                  {p === null ? 'Disabled' : `GPIO ${p}`}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-end">
+            <p className="text-xs text-obd-dim pb-2">HIGH=normal, LOW 1s=reset</p>
           </div>
         </div>
       </div>

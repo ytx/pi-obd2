@@ -78,6 +78,16 @@ export class GpioManager {
     });
   }
 
+  set(pin: number, value: number): void {
+    if (!this.accessible) return;
+    try {
+      execSync(`gpioset -c ${GPIO_CHIP} ${pin}=${value}`, { stdio: 'pipe' });
+      logger.info('gpio', `gpioset pin ${pin}=${value}`);
+    } catch (err) {
+      logger.error('gpio', `gpioset pin ${pin}=${value} failed: ${err}`);
+    }
+  }
+
   read(pin: number): number {
     if (!this.accessible) return 0;
     try {
