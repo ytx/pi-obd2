@@ -198,7 +198,7 @@ function DashboardScreen() {
 
       {/* Tap zone - top-left: Menu */}
       <div
-        className="absolute top-0 left-0 w-[100px] h-[100px] cursor-pointer"
+        className="absolute top-0 left-0 w-[100px] h-[100px] cursor-pointer z-50"
         onClick={() => setScreen('menu')}
       />
     </div>

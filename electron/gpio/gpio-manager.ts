@@ -24,6 +24,8 @@ export class GpioManager {
   private callbacks: GpioChangeCallback[] = [];
   private accessible: boolean;
   private watchedPins: number[] = [];
+  /** gpioset processes per pin (libgpiod v2 holds the line while running) */
+  private setProcesses: Map<number, ChildProcess> = new Map();
 
   constructor() {
     this.accessible = hasGpiomon();
@@ -78,14 +80,30 @@ export class GpioManager {
     });
   }
 
+  /** Set a GPIO pin to output value. Uses spawn (not execSync) because
+   *  libgpiod v2's gpioset holds the line while running — execSync would block forever.
+   *  The spawned process is kept alive to maintain the line state. */
   set(pin: number, value: number): void {
     if (!this.accessible) return;
-    try {
-      execSync(`gpioset -c ${GPIO_CHIP} ${pin}=${value}`, { stdio: 'pipe' });
-      logger.info('gpio', `gpioset pin ${pin}=${value}`);
-    } catch (err) {
-      logger.error('gpio', `gpioset pin ${pin}=${value} failed: ${err}`);
+    // Kill previous gpioset for this pin
+    const prev = this.setProcesses.get(pin);
+    if (prev) {
+      prev.kill();
+      this.setProcesses.delete(pin);
     }
+    const proc = spawn('gpioset', ['-c', GPIO_CHIP, `${pin}=${value}`], {
+      stdio: 'ignore',
+    });
+    this.setProcesses.set(pin, proc);
+    proc.on('exit', () => {
+      if (this.setProcesses.get(pin) === proc) {
+        this.setProcesses.delete(pin);
+      }
+    });
+    proc.on('error', (err) => {
+      logger.error('gpio', `gpioset pin ${pin}=${value} failed: ${err}`);
+    });
+    logger.info('gpio', `gpioset pin ${pin}=${value} (pid=${proc.pid})`);
   }
 
   read(pin: number): number {
@@ -115,6 +133,10 @@ export class GpioManager {
 
   dispose(): void {
     this.killProcess();
+    for (const proc of this.setProcesses.values()) {
+      proc.kill();
+    }
+    this.setProcesses.clear();
     this.callbacks = [];
     this.watchedPins = [];
   }
