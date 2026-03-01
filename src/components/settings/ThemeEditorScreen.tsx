@@ -826,7 +826,7 @@ function PropertyGroupEditor({
 
           return (
             <div key={key} className="flex items-center gap-2 text-xs">
-              <label className="w-24 text-right text-obd-dim shrink-0">
+              <label className="w-24 text-right text-gray-300 shrink-0">
                 {prop.label}
                 {isPidOverride && <span className="text-amber-400 ml-1">(PID)</span>}
               </label>
