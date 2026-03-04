@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { useGpioStore } from '@/stores/useGpioStore';
 import { useThemeStore } from '@/stores/useThemeStore';
 import { useBoardStore } from '@/stores/useBoardStore';
@@ -5,6 +6,19 @@ import { useBoardStore } from '@/stores/useBoardStore';
 const GPIO_PIN_OPTIONS: (number | null)[] = [
   null, 4, 5, 6, 12, 13, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
 ];
+
+function GpioBadge({ value, activeHigh }: { value: number; activeHigh: boolean }) {
+  const isActive = activeHigh ? value === 1 : value === 0;
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded font-mono ${
+      isActive
+        ? 'bg-green-900 text-green-300'
+        : 'bg-gray-800 text-gray-400'
+    }`}>
+      {value ? 'HIGH' : 'LOW'}
+    </span>
+  );
+}
 
 function GpioSection() {
   const {
@@ -29,6 +43,26 @@ function GpioSection() {
   const { availableThemes } = useThemeStore();
   const { boards } = useBoardStore();
 
+  // Poll GPIO pin values every 1 second
+  const [pinValues, setPinValues] = useState<Record<number, number>>({});
+  useEffect(() => {
+    if (!window.obd2API) return;
+    const readPins = async () => {
+      const values: Record<number, number> = {};
+      for (const pin of [illuminationPin, reversePin]) {
+        if (pin !== null) {
+          try {
+            values[pin] = await window.obd2API.gpioRead(pin);
+          } catch { /* ignore */ }
+        }
+      }
+      setPinValues(values);
+    };
+    readPins();
+    const id = setInterval(readPins, 1000);
+    return () => clearInterval(id);
+  }, [illuminationPin, reversePin]);
+
   const handlePinChange = (setter: (pin: number | null) => void, value: string) => {
     const pin = value === '' ? null : Number(value);
     setter(pin);
@@ -51,6 +85,9 @@ function GpioSection() {
       <div className="mb-4">
         <div className="flex items-center gap-2 mb-2">
           <h3 className="text-sm font-medium text-obd-accent">Illumination</h3>
+          {illuminationPin !== null && pinValues[illuminationPin] !== undefined && (
+            <GpioBadge value={pinValues[illuminationPin]} activeHigh={illuminationActiveHigh} />
+          )}
           {illuminationActive && (
             <span className="text-xs bg-yellow-800 text-yellow-200 px-2 py-0.5 rounded">ON</span>
           )}
@@ -103,6 +140,9 @@ function GpioSection() {
       <div className="mb-4">
         <div className="flex items-center gap-2 mb-2">
           <h3 className="text-sm font-medium text-obd-accent">Reverse</h3>
+          {reversePin !== null && pinValues[reversePin] !== undefined && (
+            <GpioBadge value={pinValues[reversePin]} activeHigh={reverseActiveHigh} />
+          )}
           {reverseActive && (
             <span className="text-xs bg-blue-800 text-blue-200 px-2 py-0.5 rounded">ON</span>
           )}

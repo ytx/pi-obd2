@@ -114,6 +114,7 @@ const obd2API = {
   gpioRead: (pin: number): Promise<number> => ipcRenderer.invoke('gpio-read', pin),
   gpioSet: (pin: number, value: number): Promise<void> => ipcRenderer.invoke('gpio-set', pin, value),
   gpioUsbReset: (pin: number): Promise<void> => ipcRenderer.invoke('gpio-usb-reset', pin),
+  gpioSetUsbResetPin: (pin: number | null): Promise<void> => ipcRenderer.invoke('gpio-set-usb-reset-pin', pin),
   onGpioChange: (callback: (event: { pin: number; value: number }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: { pin: number; value: number }) => callback(data);
     ipcRenderer.on('gpio-change', listener);

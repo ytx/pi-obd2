@@ -26,8 +26,6 @@ function DashboardScreen() {
   // GPIO saved state refs (for restoring on OFF)
   const savedThemeIdRef = useRef<string | null | undefined>(undefined);
   const savedBoardIdRef = useRef<string | null>(null);
-  // USB reset: only attempt once per error cycle (reset on successful connect)
-  const usbResetAttemptedRef = useRef(false);
 
   // Initialize: load available PIDs, stub mode, profiles, themes, register event listeners
   // Then auto-connect after hydration
@@ -42,26 +40,9 @@ function DashboardScreen() {
     window.obd2API.themeList().then(setAvailableThemes);
 
     const removeData = window.obd2API.onOBDData(updateValues);
-    const removeConn = window.obd2API.onOBDConnectionChange((s) => {
-      setConnectionState(s as OBDConnectionState);
-      if (s === 'connected') {
-        usbResetAttemptedRef.current = false;
-      }
-      if (s === 'error' && !usbResetAttemptedRef.current) {
-        const { usbResetPin } = useGpioStore.getState();
-        const { obdDevicePath } = useOBDStore.getState();
-        if (usbResetPin !== null && obdDevicePath) {
-          usbResetAttemptedRef.current = true;
-          window.obd2API.gpioUsbReset(usbResetPin).then(() =>
-            new Promise<void>((r) => setTimeout(r, 2000)),
-          ).then(() => {
-            if (!cancelled) {
-              window.obd2API.obdConnect(obdDevicePath).catch(() => {});
-            }
-          });
-        }
-      }
-    });
+    const removeConn = window.obd2API.onOBDConnectionChange((s) =>
+      setConnectionState(s as OBDConnectionState),
+    );
 
     // Wait for OBDStore hydration then auto-connect (only if disconnected)
     // cancelled flag prevents duplicate connect from React StrictMode double-mount
@@ -101,6 +82,8 @@ function DashboardScreen() {
       if (pins.length > 0) {
         window.obd2API.gpioSetup(pins);
       }
+      // Register USB reset pin with main process (for auto-reset on ELM327 error)
+      window.obd2API.gpioSetUsbResetPin(usbResetPin);
       // Initialize USB reset pin to HIGH (output pin, not monitored by gpiomon)
       if (usbResetPin !== null) {
         window.obd2API.gpioSet(usbResetPin, 1);

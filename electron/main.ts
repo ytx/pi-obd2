@@ -24,6 +24,9 @@ let usbMounted = false;
 let usbAutoMounted = false;  // true when mounted by autoMountUsb (will auto-unmount after theme-load)
 let dataSource: DataSource | null = null;
 let isStubMode = true; // Default to stub for development
+let usbResetCount = 0; // Consecutive USB resets without a successful connection
+const USB_RESET_MAX = 3; // Max consecutive resets before giving up
+let usbResetInProgress = false; // Prevent overlapping resets
 
 // CPU usage tracking
 let prevCpuIdle = 0;
@@ -69,9 +72,47 @@ function getDataSource(): DataSource {
     });
     dataSource.onConnectionChange((state) => {
       mainWindow?.webContents.send('obd-connection-change', state);
+      if (state === 'connected') {
+        usbResetCount = 0; // Successful connection — reset the counter
+      } else if (state === 'error') {
+        handleUsbReset();
+      }
     });
   }
   return dataSource;
+}
+
+// USB reset pin and device path — set by renderer via IPC at startup
+let lastUsbResetPin: number | null = null;
+let lastObdDevicePath: string | null = null;
+
+async function handleUsbReset(): Promise<void> {
+  if (lastUsbResetPin === null || lastObdDevicePath === null) return;
+  if (usbResetInProgress) {
+    logger.info('obd', 'USB reset skipped (already in progress)');
+    return;
+  }
+  if (usbResetCount >= USB_RESET_MAX) {
+    logger.info('obd', `USB reset skipped (${usbResetCount}/${USB_RESET_MAX} consecutive resets, giving up)`);
+    return;
+  }
+  usbResetInProgress = true;
+  usbResetCount++;
+  logger.info('obd', `USB reset ${usbResetCount}/${USB_RESET_MAX}: pin ${lastUsbResetPin} LOW → 1s → HIGH, then reconnect`);
+  gpioManager.set(lastUsbResetPin, 0);
+  await new Promise((r) => setTimeout(r, 1000));
+  gpioManager.set(lastUsbResetPin, 1);
+  await new Promise((r) => setTimeout(r, 2000));
+  // Reconnect
+  logger.info('obd', `USB reset done, reconnecting to ${lastObdDevicePath}`);
+  if (dataSource && dataSource.getState() !== 'disconnected') {
+    await dataSource.disconnect();
+  }
+  usbResetInProgress = false;
+  const ds = getDataSource();
+  ds.connect(lastObdDevicePath).catch((err) => {
+    logger.error('obd', `USB reset reconnect failed: ${err}`);
+  });
 }
 
 function parseWindowSize(): { width: number; height: number } {
@@ -160,6 +201,7 @@ function registerIpcHandlers(): void {
   // --- OBD2 IPC ---
   ipcMain.handle('obd-connect', async (_event, devicePath?: string) => {
     logger.info('obd', `Connect requested (devicePath=${devicePath ?? 'none'}, stubMode=${isStubMode})`);
+    if (devicePath) lastObdDevicePath = devicePath;
     // Disconnect existing connection first
     if (dataSource && dataSource.getState() !== 'disconnected') {
       logger.info('obd', 'Disconnecting existing connection before reconnect');
@@ -631,10 +673,15 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('gpio-usb-reset', async (_event, pin: number) => {
+    lastUsbResetPin = pin;
     logger.info('gpio', `USB reset: pin ${pin} LOW → 1s → HIGH`);
     gpioManager.set(pin, 0);
     await new Promise((r) => setTimeout(r, 1000));
     gpioManager.set(pin, 1);
+  });
+
+  ipcMain.handle('gpio-set-usb-reset-pin', (_event, pin: number | null) => {
+    lastUsbResetPin = pin;
   });
 }
 

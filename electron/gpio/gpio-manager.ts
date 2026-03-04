@@ -26,11 +26,31 @@ export class GpioManager {
   private watchedPins: number[] = [];
   /** gpioset processes per pin (libgpiod v2 holds the line while running) */
   private setProcesses: Map<number, ChildProcess> = new Map();
+  /** Cached pin values: initial read by gpioget, then updated by gpiomon events */
+  private pinValues: Map<number, number> = new Map();
 
   constructor() {
     this.accessible = hasGpiomon();
     if (!this.accessible) {
       logger.warn('gpio', 'gpiomon not found — GPIO disabled');
+    } else {
+      this.killOrphanedGpioset();
+    }
+  }
+
+  /** Kill any orphaned gpioset processes from previous runs.
+   *  These can remain if the app was killed without proper cleanup,
+   *  and they hold GPIO lines preventing gpiomon from requesting them. */
+  private killOrphanedGpioset(): void {
+    try {
+      const output = execSync('pgrep -a gpioset', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+      const lines = output.trim().split('\n').filter(Boolean);
+      if (lines.length > 0) {
+        logger.info('gpio', `Killing ${lines.length} orphaned gpioset process(es)`);
+        execSync('pkill gpioset', { stdio: 'pipe' });
+      }
+    } catch {
+      // pgrep returns exit code 1 when no processes found — that's fine
     }
   }
 
@@ -43,8 +63,20 @@ export class GpioManager {
       return;
     }
 
-    // gpiomon -c gpiochip0 -e both --debounce-period 50ms <offset> [<offset>...]
-    const args = ['-c', GPIO_CHIP, '-e', 'both', '--debounce-period', '50ms', ...pins.map(String)];
+    // Read initial pin values BEFORE gpiomon takes hold of the lines
+    for (const pin of pins) {
+      try {
+        const output = execSync(`gpioget --numeric --bias=disabled -c ${GPIO_CHIP} ${pin}`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+        const value = parseInt(output.trim(), 10) || 0;
+        this.pinValues.set(pin, value);
+        logger.info('gpio', `Initial read: pin ${pin} = ${value}`);
+      } catch (err) {
+        logger.warn('gpio', `gpioget pin ${pin} failed (initial read): ${err}`);
+      }
+    }
+
+    // gpiomon -c gpiochip0 --bias=disabled -e both --debounce-period 50ms <offset> [<offset>...]
+    const args = ['-c', GPIO_CHIP, '--bias=disabled', '-e', 'both', '--debounce-period', '50ms', ...pins.map(String)];
     logger.info('gpio', `Starting: gpiomon ${args.join(' ')}`);
 
     const proc = spawn('gpiomon', args, { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -60,6 +92,7 @@ export class GpioManager {
         if (!match) continue;
         const value = match[1] === 'rising' ? 1 : 0;
         const pin = parseInt(match[2], 10);
+        this.pinValues.set(pin, value);
         logger.info('gpio', `Pin ${pin} ${match[1]} (value=${value})`);
         const event: GpioChangeEvent = { pin, value };
         for (const cb of this.callbacks) {
@@ -106,10 +139,15 @@ export class GpioManager {
     logger.info('gpio', `gpioset pin ${pin}=${value} (pid=${proc.pid})`);
   }
 
+  /** Read cached pin value. For watched pins, returns the value from initial
+   *  gpioget read or latest gpiomon event. For unwatched pins, falls back to gpioget. */
   read(pin: number): number {
     if (!this.accessible) return 0;
+    const cached = this.pinValues.get(pin);
+    if (cached !== undefined) return cached;
+    // Unwatched pin — try gpioget directly
     try {
-      const output = execSync(`gpioget -c ${GPIO_CHIP} ${pin}`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+      const output = execSync(`gpioget --numeric --bias=disabled -c ${GPIO_CHIP} ${pin}`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
       return parseInt(output.trim(), 10) || 0;
     } catch (err) {
       logger.error('gpio', `gpioget pin ${pin} failed: ${err}`);

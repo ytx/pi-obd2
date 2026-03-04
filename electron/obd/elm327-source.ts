@@ -443,22 +443,40 @@ export class ELM327Source implements DataSource {
    * Close serial fd. By default keeps -hupcl so DTR stays asserted and the
    * ELM327 doesn't reset (allows fast reconnect). Pass restoreHupcl=true
    * only on final dispose so the device resets cleanly for other programs.
+   *
+   * Normal cleanup uses async fs.close() to avoid blocking the event loop.
+   * USB serial drivers (cp210x, ch341, ftdi_sio) have a closing_wait of 30s
+   * by default — close() blocks until the output buffer drains or the timeout
+   * expires.  When the ELM327 is unresponsive this blocks for the full 30s,
+   * delaying setState('error') and the USB-reset recovery path.
+   *
+   * dispose() uses sync closeSync so DTR drops before process exit.
    */
   private async cleanup(restoreHupcl = false): Promise<void> {
     if (this.fd !== null) {
-      logger.info('ELM327', `cleanup: closing fd=${this.fd} (restoreHupcl=${restoreHupcl})`);
+      const fd = this.fd;
+      this.fd = null; // prevent further use immediately
+      logger.info('ELM327', `cleanup: closing fd=${fd} (restoreHupcl=${restoreHupcl})`);
       if (restoreHupcl) {
+        // Synchronous path — dispose() needs DTR to drop before process exits
         try {
           execFileSync('stty', ['hupcl', '-clocal'], {
-            stdio: [this.fd, 'pipe', 'pipe'],
+            stdio: [fd, 'pipe', 'pipe'],
             timeout: 1000,
           });
         } catch { /* ignore — best effort */ }
+        try { fs.closeSync(fd); } catch (err) {
+          logger.warn('ELM327', `cleanup: close failed: ${err}`);
+        }
+      } else {
+        // Async close — avoids blocking event loop on USB serial closing_wait
+        await new Promise<void>((resolve) => {
+          fs.close(fd, (err) => {
+            if (err) logger.warn('ELM327', `cleanup: close failed: ${err}`);
+            resolve();
+          });
+        });
       }
-      try { fs.closeSync(this.fd); } catch (err) {
-        logger.warn('ELM327', `cleanup: close failed: ${err}`);
-      }
-      this.fd = null;
     }
   }
 }
