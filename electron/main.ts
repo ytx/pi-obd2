@@ -70,13 +70,20 @@ function getDataSource(): DataSource {
     dataSource.onData((values) => {
       mainWindow?.webContents.send('obd-data', values);
     });
+    let previousState: string = 'disconnected';
     dataSource.onConnectionChange((state) => {
       mainWindow?.webContents.send('obd-connection-change', state);
       if (state === 'connected') {
         usbResetCount = 0; // Successful connection — reset the counter
       } else if (state === 'error') {
-        handleUsbReset();
+        if (previousState === 'connecting') {
+          // Connect/init failed — ELM327 not responding, USB reset may help
+          handleUsbReset();
+        }
+        // Poll errors: stay in error state, no auto-reconnect.
+        // DashboardScreen will reconnect on next mount (navigate away and back).
       }
+      previousState = state;
     });
   }
   return dataSource;
@@ -102,7 +109,7 @@ async function handleUsbReset(): Promise<void> {
   gpioManager.set(lastUsbResetPin, 0);
   await new Promise((r) => setTimeout(r, 1000));
   gpioManager.set(lastUsbResetPin, 1);
-  await new Promise((r) => setTimeout(r, 2000));
+  await new Promise((r) => setTimeout(r, 3000));
   // Reconnect
   logger.info('obd', `USB reset done, reconnecting to ${lastObdDevicePath}`);
   if (dataSource && dataSource.getState() !== 'disconnected') {

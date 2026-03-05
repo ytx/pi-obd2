@@ -268,6 +268,7 @@ export class ELM327Source implements DataSource {
       let response = '';
       const readBuf = Buffer.alloc(READ_CHUNK_SIZE);
       const deadline = Date.now() + COMMAND_TIMEOUT;
+      let lastDataTime = 0;
 
       const readLoop = () => {
         // Abort if generation changed (disconnect/reconnect happened)
@@ -277,7 +278,16 @@ export class ELM327Source implements DataSource {
         }
 
         if (Date.now() > deadline) {
+          logger.warn('ELM327', `Timeout for ${cmd}, partial response (${response.length} bytes): ${this.sanitize(response)}`);
           reject(new Error(`Timeout waiting for response to: ${cmd}`));
+          return;
+        }
+
+        // If we have data but no '>' for 1 second, treat response as complete
+        // (some ELM327 clones hang without sending '>' after '?' error responses)
+        if (lastDataTime > 0 && Date.now() - lastDataTime > 1000) {
+          logger.warn('ELM327', `No '>' prompt for ${cmd}, using partial response: ${this.sanitize(response)}`);
+          resolve(response.trim());
           return;
         }
 
@@ -285,6 +295,7 @@ export class ELM327Source implements DataSource {
           const bytesRead = fs.readSync(fd, readBuf, 0, READ_CHUNK_SIZE, null);
           if (bytesRead > 0) {
             response += readBuf.toString('ascii', 0, bytesRead);
+            lastDataTime = Date.now();
             if (response.includes('>')) {
               resolve(response.replace(/>/g, '').trim());
               return;
@@ -396,6 +407,23 @@ export class ELM327Source implements DataSource {
           if (value !== null) {
             values.push({ pid, value, timestamp: now });
           }
+
+          // After '?' error (ELM327 confused, no '>' sent), resync by sending
+          // an empty command to get a fresh '>' prompt before continuing.
+          if (resp.includes('?')) {
+            await new Promise((r) => setTimeout(r, 100));
+            this.drainRead();
+            try {
+              await this.sendCommand('', gen);
+            } catch {
+              // resync failed — drain and continue
+              this.drainRead();
+            }
+          }
+
+          // Brief pause between commands — some ELM327 clones need time to
+          // reset their parser after responding.
+          await new Promise((r) => setTimeout(r, 50));
         }
 
         if (values.length > 0 && !this.pollAbort && gen === this.generation) {
