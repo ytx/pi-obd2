@@ -6,6 +6,7 @@ import { BoardSlot, MeterConfig, GraphConfig, NumericConfig } from '@/types';
 import NumericPanel from './NumericPanel';
 import MeterPanel from './MeterPanel';
 import GraphPanel from './GraphPanel';
+import MapPanel from './MapPanel';
 
 interface PanelSlotProps {
   slot: BoardSlot | null;
@@ -55,6 +56,8 @@ function PanelSlot({ slot }: PanelSlotProps) {
       const config = timeWindowMs !== cfg.timeWindowMs ? { ...cfg, timeWindowMs } : cfg;
       return <GraphPanel pid={slot.pid} label={title} min={min} max={max} unit={unit} config={config} />;
     }
+    case 'map':
+      return <MapPanel />;
     default:
       return <div className="bg-obd-surface/30 rounded-lg" />;
   }

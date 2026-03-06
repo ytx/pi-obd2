@@ -8,3 +8,5 @@ release/
 electron/git-version.ts
 /themes/
 /scripts/output/
+*.pmtiles
+pmtiles

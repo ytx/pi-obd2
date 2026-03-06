@@ -159,6 +159,10 @@ const obd2API = {
     return () => { ipcRenderer.removeListener('terminal-exit', listener); };
   },
 
+  // Map
+  mapListTiles: (): Promise<Array<{ path: string; name: string; size: number }>> =>
+    ipcRenderer.invoke('map-list-tiles'),
+
   // Logs
   getLogs: (): Promise<Array<{ timestamp: string; level: string; tag: string; message: string }>> =>
     ipcRenderer.invoke('get-logs'),

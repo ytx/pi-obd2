@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, protocol } from 'electron';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
@@ -18,6 +18,11 @@ import { WiFiManager } from './network/wifi-manager';
 import { GpioManager } from './gpio/gpio-manager';
 import { logger } from './logger';
 import { TerminalManager } from './terminal/terminal-manager';
+
+// Register custom protocol for serving local PMTiles with Range request support
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'local-tiles', privileges: { supportFetchAPI: true, stream: true } },
+]);
 
 const USB_MOUNT_POINT = '/mnt/obd2-usb';
 
@@ -820,6 +825,28 @@ function registerIpcHandlers(): void {
   ipcMain.handle('terminal-kill', () => {
     terminalManager?.kill();
   });
+
+  // --- Map IPC ---
+  ipcMain.handle('map-list-tiles', () => {
+    const dirs = [
+      path.join(os.homedir(), 'tiles'),
+      path.join(__dirname, '..', 'tiles'),
+      path.join(__dirname, '..', 'scripts'),
+    ];
+    const files: { path: string; name: string; size: number }[] = [];
+    for (const dir of dirs) {
+      try {
+        for (const entry of fs.readdirSync(dir)) {
+          if (entry.endsWith('.pmtiles')) {
+            const p = path.join(dir, entry);
+            const stat = fs.statSync(p);
+            files.push({ path: p, name: entry, size: stat.size });
+          }
+        }
+      } catch { /* dir doesn't exist */ }
+    }
+    return files;
+  });
 }
 
 /** Auto-mount USB if a device is present (for theme/config restoration after reboot) */
@@ -865,6 +892,45 @@ function autoMountUsb(): void {
 }
 
 app.whenReady().then(() => {
+  // Register local-tiles protocol handler (serves local files with Range request support for PMTiles)
+  protocol.handle('local-tiles', (request) => {
+    const filePath = decodeURIComponent(new URL(request.url).pathname);
+    try {
+      const stat = fs.statSync(filePath);
+      const rangeHeader = request.headers.get('Range');
+      if (rangeHeader) {
+        const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+        if (!match) return new Response(null, { status: 416 });
+        const start = parseInt(match[1]);
+        const end = match[2] ? parseInt(match[2]) : stat.size - 1;
+        const length = end - start + 1;
+        const buffer = Buffer.alloc(length);
+        const fd = fs.openSync(filePath, 'r');
+        fs.readSync(fd, buffer, 0, length, start);
+        fs.closeSync(fd);
+        return new Response(buffer, {
+          status: 206,
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+            'Content-Length': String(length),
+            'Accept-Ranges': 'bytes',
+          },
+        });
+      }
+      const data = fs.readFileSync(filePath);
+      return new Response(data, {
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': String(stat.size),
+          'Accept-Ranges': 'bytes',
+        },
+      });
+    } catch {
+      return new Response(null, { status: 404 });
+    }
+  });
+
   // Check environment variable for mode
   if (process.env.OBD2_MODE === 'real') {
     isStubMode = false;

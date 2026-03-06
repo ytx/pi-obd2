@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MapLibre + PMTiles Test (RPi4)</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.19.0/dist/maplibre-gl.css" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #111; color: #eee; font-family: monospace; }
+    #map { width: 100vw; height: 80vh; }
+    #info {
+      padding: 8px 12px;
+      font-size: 14px;
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+    #info span { white-space: nowrap; }
+    #controls { padding: 8px 12px; display: flex; gap: 8px; }
+    button {
+      padding: 6px 16px;
+      background: #333;
+      color: #eee;
+      border: 1px solid #555;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: monospace;
+    }
+    button:hover { background: #444; }
+    button.active { background: #27a; border-color: #38c; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="info">
+    <span>FPS: <b id="fps">--</b></span>
+    <span>Zoom: <b id="zoom">--</b></span>
+    <span>Bearing: <b id="bearing">--</b></span>
+    <span>Center: <b id="center">--</b></span>
+    <span>Tiles: <b id="tileinfo">--</b></span>
+  </div>
+  <div id="controls">
+    <button onclick="rotateTo(0)">North Up</button>
+    <button onclick="rotateTo(45)">NE 45</button>
+    <button onclick="rotateTo(90)">East 90</button>
+    <button onclick="startAutoRotate()" id="btn-rotate">Auto Rotate</button>
+    <button onclick="setTheme('light')" id="btn-light" class="active">Light</button>
+    <button onclick="setTheme('dark')" id="btn-dark">Dark</button>
+  </div>
+
+  <script src="https://unpkg.com/pmtiles@4.4.0/dist/pmtiles.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.19.0/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/@protomaps/basemaps@5/dist/basemaps.js" crossorigin="anonymous"></script>
+  <script>
+    // --- Config ---
+    // Change this to your local PMTiles file URL
+    // Serve with: python3 -m http.server 8080
+    const PMTILES_URL = "http://localhost:8080/tokyo.pmtiles";
+
+    // --- Setup ---
+    const protocol = new pmtiles.Protocol();
+    maplibregl.addProtocol("pmtiles", protocol.tile);
+
+    let currentTheme = "light";
+
+    function makeStyle(theme) {
+      return {
+        version: 8,
+        glyphs: "https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf",
+        sprite: `https://protomaps.github.io/basemaps-assets/sprites/v4/${theme}`,
+        sources: {
+          protomaps: {
+            type: "vector",
+            url: `pmtiles://${PMTILES_URL}`,
+            attribution: '&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>'
+          }
+        },
+        layers: basemaps.layers("protomaps", basemaps.namedFlavor(theme), { lang: "ja" })
+      };
+    }
+
+    const map = new maplibregl.Map({
+      container: "map",
+      zoom: 12,
+      center: [139.6917, 35.6895], // Tokyo
+      style: makeStyle(currentTheme),
+      bearing: 0,
+      pitch: 0,
+    });
+
+    // --- FPS counter ---
+    let frameCount = 0;
+    let lastFpsTime = performance.now();
+    function countFrame() {
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsTime >= 1000) {
+        document.getElementById("fps").textContent = frameCount;
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+      requestAnimationFrame(countFrame);
+    }
+    requestAnimationFrame(countFrame);
+
+    // --- Info display ---
+    map.on("moveend", updateInfo);
+    map.on("zoomend", updateInfo);
+    map.on("rotateend", updateInfo);
+    map.on("load", updateInfo);
+
+    function updateInfo() {
+      const z = map.getZoom().toFixed(1);
+      const b = map.getBearing().toFixed(0);
+      const c = map.getCenter();
+      document.getElementById("zoom").textContent = z;
+      document.getElementById("bearing").textContent = b + "\u00b0";
+      document.getElementById("center").textContent =
+        c.lat.toFixed(4) + ", " + c.lng.toFixed(4);
+    }
+
+    // --- Controls ---
+    function rotateTo(deg) {
+      stopAutoRotate();
+      map.easeTo({ bearing: deg, duration: 500 });
+    }
+
+    let rotateInterval = null;
+    function startAutoRotate() {
+      if (rotateInterval) {
+        stopAutoRotate();
+        return;
+      }
+      document.getElementById("btn-rotate").classList.add("active");
+      rotateInterval = setInterval(() => {
+        map.easeTo({ bearing: map.getBearing() + 5, duration: 200 });
+      }, 200);
+    }
+
+    function stopAutoRotate() {
+      if (rotateInterval) {
+        clearInterval(rotateInterval);
+        rotateInterval = null;
+        document.getElementById("btn-rotate").classList.remove("active");
+      }
+    }
+
+    function setTheme(theme) {
+      currentTheme = theme;
+      map.setStyle(makeStyle(theme));
+      document.getElementById("btn-light").classList.toggle("active", theme === "light");
+      document.getElementById("btn-dark").classList.toggle("active", theme === "dark");
+    }
+
+    // --- PMTiles info ---
+    (async () => {
+      try {
+        const p = new pmtiles.PMTiles(PMTILES_URL);
+        const header = await p.getHeader();
+        document.getElementById("tileinfo").textContent =
+          `z${header.minZoom}-${header.maxZoom}, ${(header.tileDataLength / 1024 / 1024).toFixed(1)}MB`;
+      } catch (e) {
+        document.getElementById("tileinfo").textContent = "load error: " + e.message;
+      }
+    })();
+  </script>
+</body>
+</html>

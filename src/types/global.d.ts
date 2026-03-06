@@ -101,6 +101,9 @@ declare global {
       onTerminalOutput: (callback: (data: string) => void) => () => void;
       onTerminalExit: (callback: (code: number) => void) => () => void;
 
+      // Map
+      mapListTiles: () => Promise<Array<{ path: string; name: string; size: number }>>;
+
       // Logs
       getLogs: () => Promise<Array<{ timestamp: string; level: string; tag: string; message: string }>>;
       saveLogsUsb: () => Promise<{ success: boolean; filePath?: string; error?: string }>;

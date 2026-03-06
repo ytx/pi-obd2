@@ -47,7 +47,7 @@ export interface StubConfig {
 }
 
 // Panel & Board types (Phase 3)
-export type PanelKind = 'numeric' | 'meter' | 'graph';
+export type PanelKind = 'numeric' | 'meter' | 'graph' | 'map';
 export type MeterType = 'needle' | 'arc';
 
 export interface MeterConfig {
@@ -93,10 +93,14 @@ export interface NumericConfig {
   decimals: number;
 }
 
+export interface MapConfig {
+  // Reserved for future map settings
+}
+
 export interface PanelDef {
   id: string;
   kind: PanelKind;
-  config: MeterConfig | GraphConfig | NumericConfig;
+  config: MeterConfig | GraphConfig | NumericConfig | MapConfig;
 }
 
 export interface BoardSlot {

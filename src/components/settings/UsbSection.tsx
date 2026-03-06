@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { UsbDevice } from '@/types';
 import { useBoardStore } from '@/stores/useBoardStore';
 import { useThemeStore } from '@/stores/useThemeStore';
+import { useMapStore } from '@/stores/useMapStore';
 import { ThemeData } from '@/types';
 
 function UsbSection() {
@@ -76,13 +77,16 @@ function UsbSection() {
     setMessage(null);
     const { boards, layouts, currentBoardId, screenPadding } = useBoardStore.getState();
     const { currentThemeId } = useThemeStore.getState();
+    const { destinations, activeDestinationId } = useMapStore.getState();
     const config = {
-      version: 2,
+      version: 3,
       boards,
       layouts,
       currentBoardId,
       screenPadding,
       currentThemeId,
+      destinations,
+      activeDestinationId,
     };
     const result = await window.obd2API.usbExportConfig(JSON.stringify(config, null, 2));
     if (result.success) {
@@ -104,7 +108,7 @@ function UsbSection() {
     }
     try {
       const config = JSON.parse(result.data!);
-      if (config.version !== 1 && config.version !== 2) {
+      if (config.version !== 1 && config.version !== 2 && config.version !== 3) {
         setMessage('未対応の設定ファイルバージョンです');
         setBusy(false);
         return;
@@ -140,6 +144,13 @@ function UsbSection() {
         } else {
           themeStore.clearTheme();
         }
+      }
+      // Apply map destinations (v3+)
+      if (config.version >= 3 && config.destinations) {
+        useMapStore.setState({
+          destinations: config.destinations,
+          activeDestinationId: config.activeDestinationId ?? null,
+        });
       }
       setMessage('設定をインポートしました');
     } catch {
