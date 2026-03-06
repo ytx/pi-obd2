@@ -17,6 +17,8 @@ import GpsScreen from '@/components/settings/GpsScreen';
 import ValuesScreen from '@/components/settings/ValuesScreen';
 import AboutScreen from '@/components/settings/AboutScreen';
 import TerminalScreen from '@/components/settings/TerminalScreen';
+import WiFiScreen from '@/components/settings/WiFiScreen';
+import GpioScreen from '@/components/settings/GpioScreen';
 
 function App() {
   const { currentScreen, setHostname } = useAppStore();
@@ -60,6 +62,8 @@ function App() {
       {currentScreen === 'values' && <ValuesScreen />}
       {currentScreen === 'about' && <AboutScreen />}
       {currentScreen === 'terminal' && <TerminalScreen />}
+      {currentScreen === 'wifi' && <WiFiScreen />}
+      {currentScreen === 'gpio' && <GpioScreen />}
     </div>
   );
 }

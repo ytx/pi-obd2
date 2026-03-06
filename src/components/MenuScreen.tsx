@@ -14,10 +14,11 @@ const tiles: (TileConfig | null)[] = [
   { label: 'DTCs', icon: 'car_crash', screen: 'dtc', color: 'bg-red-700' },
   null, null, null,
   // Row 2
-  { label: 'Bluetooth', icon: 'settings_bluetooth', screen: 'bluetooth', color: 'bg-blue-700' },
   { label: 'OBD2', icon: 'browse_activity', screen: 'obd2', color: 'bg-green-700' },
   { label: 'GPS', icon: 'satellite_alt', screen: 'gps', color: 'bg-cyan-700' },
-  null, null,
+  { label: 'GPIO', icon: 'cable', screen: 'gpio', color: 'bg-orange-700' },
+  { label: 'Bluetooth', icon: 'settings_bluetooth', screen: 'bluetooth', color: 'bg-blue-700' },
+  { label: 'WiFi', icon: 'wifi', screen: 'wifi', color: 'bg-sky-700' },
   // Row 3
   { label: 'Display', icon: 'display_settings', screen: 'display-settings', color: 'bg-indigo-700' },
   { label: 'Board', icon: 'select_window_2', screen: 'board-settings', color: 'bg-violet-700' },
