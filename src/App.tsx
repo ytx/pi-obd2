@@ -12,6 +12,7 @@ import ThemeEditorScreen from '@/components/settings/ThemeEditorScreen';
 import BluetoothScreen from '@/components/settings/BluetoothScreen';
 import OBD2Screen from '@/components/settings/OBD2Screen';
 import DtcScreen from '@/components/settings/DtcScreen';
+import GpsScreen from '@/components/settings/GpsScreen';
 
 function App() {
   const { currentScreen, setHostname } = useAppStore();
@@ -50,6 +51,7 @@ function App() {
       {currentScreen === 'bluetooth' && <BluetoothScreen />}
       {currentScreen === 'obd2' && <OBD2Screen />}
       {currentScreen === 'dtc' && <DtcScreen />}
+      {currentScreen === 'gps' && <GpsScreen />}
     </div>
   );
 }

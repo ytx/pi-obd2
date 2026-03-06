@@ -7,6 +7,10 @@ import { StubSource } from './obd/stub-source';
 import { ELM327Source } from './obd/elm327-source';
 import { DataSource } from './obd/data-source';
 import { getAllPidInfos } from './obd/pids';
+import { getAllGpsPidInfos } from './gps/gps-pids';
+import { GpsSource } from './gps/gps-source';
+import { SerialGpsSource } from './gps/serial-gps-source';
+import { StubGpsSource } from './gps/stub-gps-source';
 import { StubPidConfig, StubProfileName } from './obd/types';
 import { scanThemes, loadTheme, resolveThemeDir, getThemesDir } from './themes/theme-loader';
 import { BluetoothManager } from './bluetooth/bluetooth-manager';
@@ -27,6 +31,10 @@ let isStubMode = true; // Default to stub for development
 let usbResetCount = 0; // Consecutive USB resets without a successful connection
 const USB_RESET_MAX = 3; // Max consecutive resets before giving up
 let usbResetInProgress = false; // Prevent overlapping resets
+
+// GPS source
+let gpsSource: GpsSource | null = null;
+let isGpsStubMode = false;
 
 // CPU usage tracking
 let prevCpuIdle = 0;
@@ -87,6 +95,23 @@ function getDataSource(): DataSource {
     });
   }
   return dataSource;
+}
+
+function getGpsSource(): GpsSource {
+  if (!gpsSource) {
+    if (isGpsStubMode) {
+      gpsSource = new StubGpsSource();
+    } else {
+      gpsSource = new SerialGpsSource();
+    }
+    gpsSource.onData((values) => {
+      mainWindow?.webContents.send('gps-data', values);
+    });
+    gpsSource.onConnectionChange((state) => {
+      mainWindow?.webContents.send('gps-connection-change', state);
+    });
+  }
+  return gpsSource;
 }
 
 // USB reset pin and device path — set by renderer via IPC at startup
@@ -260,7 +285,7 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('obd-get-available-pids', () => {
-    return getAllPidInfos();
+    return [...getAllPidInfos(), ...getAllGpsPidInfos()];
   });
 
   ipcMain.handle('obd-set-polling-pids', (_event, pids: string[]) => {
@@ -480,6 +505,58 @@ function registerIpcHandlers(): void {
       logger.error('serial', `serial-scan: ${err}`);
     }
     return devices;
+  });
+
+  // --- GPS IPC ---
+  ipcMain.handle('gps-connect', async (_event, devicePath?: string) => {
+    logger.info('gps', `Connect requested (devicePath=${devicePath ?? 'none'})`);
+    if (gpsSource && gpsSource.getState() !== 'disconnected') {
+      await gpsSource.disconnect();
+    }
+    if (devicePath) {
+      if (isGpsStubMode || !(gpsSource instanceof SerialGpsSource)) {
+        isGpsStubMode = false;
+        if (gpsSource) {
+          gpsSource.dispose();
+          gpsSource = null;
+        }
+      }
+    }
+    const gs = getGpsSource();
+    gs.connect(devicePath ?? undefined).then(() => {
+      logger.info('gps', `Connected (mode=${isGpsStubMode ? 'stub' : 'serial'})`);
+    }).catch((err) => {
+      logger.error('gps', `Connect failed: ${err}`);
+    });
+  });
+
+  ipcMain.handle('gps-connect-stub', () => {
+    logger.info('gps', 'Stub connect requested');
+    if (gpsSource) {
+      gpsSource.dispose();
+      gpsSource = null;
+    }
+    isGpsStubMode = true;
+    const gs = getGpsSource();
+    gs.connect().then(() => {
+      logger.info('gps', 'Connected (mode=stub)');
+    }).catch((err) => {
+      logger.error('gps', `Stub connect failed: ${err}`);
+    });
+  });
+
+  ipcMain.handle('gps-disconnect', async () => {
+    if (gpsSource) {
+      await gpsSource.disconnect();
+    }
+  });
+
+  ipcMain.handle('gps-get-state', () => {
+    return gpsSource?.getState() ?? 'disconnected';
+  });
+
+  ipcMain.handle('gps-is-stub-mode', () => {
+    return isGpsStubMode;
   });
 
   // --- WiFi IPC ---
@@ -775,6 +852,10 @@ function cleanupAndQuit(): void {
   if (dataSource) {
     dataSource.dispose();
     dataSource = null;
+  }
+  if (gpsSource) {
+    gpsSource.dispose();
+    gpsSource = null;
   }
   gpioManager.dispose();
 }

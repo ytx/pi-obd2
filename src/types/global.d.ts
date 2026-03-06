@@ -84,6 +84,15 @@ declare global {
       gpioSetUsbResetPin: (pin: number | null) => Promise<void>;
       onGpioChange: (callback: (event: GpioChangeEvent) => void) => () => void;
 
+      // GPS
+      gpsConnect: (devicePath?: string) => Promise<void>;
+      gpsConnectStub: () => Promise<void>;
+      gpsDisconnect: () => Promise<void>;
+      gpsGetState: () => Promise<string>;
+      gpsIsStubMode: () => Promise<boolean>;
+      onGPSData: (callback: (values: OBDValue[]) => void) => () => void;
+      onGPSConnectionChange: (callback: (state: string) => void) => () => void;
+
       // Logs
       getLogs: () => Promise<Array<{ timestamp: string; level: string; tag: string; message: string }>>;
       saveLogsUsb: () => Promise<{ success: boolean; filePath?: string; error?: string }>;

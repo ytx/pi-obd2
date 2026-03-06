@@ -16,7 +16,8 @@ const tiles: (TileConfig | null)[] = [
   { label: 'System', screen: 'system-settings', color: 'bg-teal-700' },
   { label: 'Dev', screen: 'dev-settings', color: 'bg-gray-700' },
   { label: 'DTCs', screen: 'dtc', color: 'bg-red-700' },
-  null, null,
+  { label: 'GPS', screen: 'gps', color: 'bg-cyan-700' },
+  null,
   null, null, null, null, null,
   null, null, null, null, null,
 ];

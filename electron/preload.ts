@@ -126,6 +126,23 @@ const obd2API = {
     return () => { ipcRenderer.removeListener('gpio-change', listener); };
   },
 
+  // GPS
+  gpsConnect: (devicePath?: string): Promise<void> => ipcRenderer.invoke('gps-connect', devicePath),
+  gpsConnectStub: (): Promise<void> => ipcRenderer.invoke('gps-connect-stub'),
+  gpsDisconnect: (): Promise<void> => ipcRenderer.invoke('gps-disconnect'),
+  gpsGetState: (): Promise<string> => ipcRenderer.invoke('gps-get-state'),
+  gpsIsStubMode: (): Promise<boolean> => ipcRenderer.invoke('gps-is-stub-mode'),
+  onGPSData: (callback: (values: Array<{ pid: string; value: number; timestamp: number }>) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, values: Array<{ pid: string; value: number; timestamp: number }>) => callback(values);
+    ipcRenderer.on('gps-data', listener);
+    return () => { ipcRenderer.removeListener('gps-data', listener); };
+  },
+  onGPSConnectionChange: (callback: (state: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: string) => callback(state);
+    ipcRenderer.on('gps-connection-change', listener);
+    return () => { ipcRenderer.removeListener('gps-connection-change', listener); };
+  },
+
   // Logs
   getLogs: (): Promise<Array<{ timestamp: string; level: string; tag: string; message: string }>> =>
     ipcRenderer.invoke('get-logs'),

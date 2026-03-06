@@ -4,6 +4,7 @@ import { useOBDStore } from '@/stores/useOBDStore';
 import { useBoardStore } from '@/stores/useBoardStore';
 import { useThemeStore } from '@/stores/useThemeStore';
 import { useGpioStore } from '@/stores/useGpioStore';
+import { useGpsStore } from '@/stores/useGpsStore';
 import { OBDConnectionState, ThemeData, GpioChangeEvent } from '@/types';
 import { waitForHydration } from '@/stores/hydration';
 import BoardContainer from '@/components/boards/BoardContainer';
@@ -21,6 +22,12 @@ function DashboardScreen() {
   } = useOBDStore();
 
   const { setAvailableThemes, applyTheme, clearTheme } = useThemeStore();
+  const {
+    gpsConnectionState,
+    isGpsStubMode,
+    setGpsConnectionState,
+    setGpsStubMode,
+  } = useGpsStore();
   const screenPadding = useBoardStore((s) => s.screenPadding);
 
   // GPIO saved state refs (for restoring on OFF)
@@ -44,6 +51,14 @@ function DashboardScreen() {
       setConnectionState(s as OBDConnectionState),
     );
 
+    // GPS listeners
+    window.obd2API.gpsIsStubMode().then(setGpsStubMode);
+    window.obd2API.gpsGetState().then((s) => setGpsConnectionState(s as OBDConnectionState));
+    const removeGpsData = window.obd2API.onGPSData(updateValues);
+    const removeGpsConn = window.obd2API.onGPSConnectionChange((s) =>
+      setGpsConnectionState(s as OBDConnectionState),
+    );
+
     // Wait for OBDStore hydration then auto-connect (only if disconnected)
     // cancelled flag prevents duplicate connect from React StrictMode double-mount
     waitForHydration(useOBDStore).then(async () => {
@@ -62,12 +77,28 @@ function DashboardScreen() {
       }
     });
 
+    // GPS auto-connect after hydration
+    waitForHydration(useGpsStore).then(async () => {
+      if (cancelled) return;
+      const { gpsDevicePath } = useGpsStore.getState();
+      if (!gpsDevicePath) return;
+      const currentGpsState = await window.obd2API.gpsGetState();
+      if (cancelled) return;
+      if (currentGpsState === 'disconnected' || currentGpsState === 'error') {
+        window.obd2API.gpsConnect(gpsDevicePath).catch((e) =>
+          console.warn('GPS auto-connect failed:', e),
+        );
+      }
+    });
+
     return () => {
       cancelled = true;
       removeData();
       removeConn();
+      removeGpsData();
+      removeGpsConn();
     };
-  }, [setAvailablePids, setStubMode, setConnectionState, updateValues, setProfiles, setAvailableThemes]);
+  }, [setAvailablePids, setStubMode, setConnectionState, updateValues, setProfiles, setAvailableThemes, setGpsConnectionState, setGpsStubMode]);
 
   // GPIO change listener — illumination (theme switch) and reverse (board switch)
   useEffect(() => {
@@ -151,22 +182,29 @@ function DashboardScreen() {
     };
   }, [applyTheme, clearTheme]);
 
-  // Connection state dot color (yellow for stub mode)
-  const dotColor: Record<string, string> = {
-    disconnected: 'bg-obd-dim',
-    connecting: 'bg-yellow-400 animate-pulse',
-    connected: isStubMode ? 'bg-yellow-400' : 'bg-green-400',
-    error: 'bg-red-500',
+  // Connection indicator colors
+  const getIconColor = (state: OBDConnectionState, stub: boolean): string => {
+    if (state === 'connected' && stub) return 'text-gray-400';
+    if (state === 'connected') return 'text-green-400';
+    if (state === 'connecting') return 'text-yellow-400 animate-pulse';
+    if (state === 'error') return 'text-red-500';
+    return 'text-red-500';
   };
+
+  const obdColor = getIconColor(connectionState, isStubMode);
+  const gpsColor = getIconColor(gpsConnectionState, isGpsStubMode);
+
+  const anyConnected = connectionState === 'connected' || gpsConnectionState === 'connected';
 
   return (
     <div className="h-full relative bg-obd-dark">
       {/* Full-screen board area */}
       <div className="h-full" style={{ padding: screenPadding }}>
-        {connectionState !== 'connected' ? (
+        {!anyConnected ? (
           <div className="h-full flex items-center justify-center">
             <p className="text-obd-accent text-lg">
-              {connectionState === 'connecting' ? 'Connecting...' : 'Waiting for connection...'}
+              {connectionState === 'connecting' || gpsConnectionState === 'connecting'
+                ? 'Connecting...' : 'Waiting for connection...'}
             </p>
           </div>
         ) : (
@@ -174,9 +212,10 @@ function DashboardScreen() {
         )}
       </div>
 
-      {/* Connection state dot overlay - top-right */}
-      <div className="absolute top-3 right-3 pointer-events-none">
-        <span className={`block w-3 h-3 rounded-full ${dotColor[connectionState] ?? 'bg-obd-dim'}`} />
+      {/* Connection state icons overlay - top-right */}
+      <div className="absolute top-2 right-2 pointer-events-none flex flex-col gap-1">
+        <span className={`material-symbols-outlined text-base ${obdColor}`}>directions_car</span>
+        <span className={`material-symbols-outlined text-base ${gpsColor}`}>satellite_alt</span>
       </div>
 
       {/* Tap zone - top-left: Menu */}

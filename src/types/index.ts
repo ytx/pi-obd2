@@ -1,4 +1,4 @@
-export type Screen = 'dashboard' | 'menu' | 'system-settings' | 'display-settings' | 'layout-editor' | 'dev-settings' | 'theme-editor' | 'bluetooth' | 'obd2' | 'dtc';
+export type Screen = 'dashboard' | 'menu' | 'system-settings' | 'display-settings' | 'layout-editor' | 'dev-settings' | 'theme-editor' | 'bluetooth' | 'obd2' | 'dtc' | 'gps';
 
 export interface SystemStats {
   cpuUsage: number;
