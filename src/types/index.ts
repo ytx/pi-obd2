@@ -165,7 +165,7 @@ export interface UsbResult {
 // Serial device types
 export interface SerialDevice {
   path: string;        // e.g. '/dev/rfcomm0', '/dev/ttyUSB0'
-  type: 'rfcomm' | 'ttyUSB' | 'ttyACM' | 'ttyS' | 'ttyOBD2';
+  type: 'rfcomm' | 'ttyUSB' | 'ttyACM' | 'ttyS' | 'ttyOBD2' | 'ttyGPS';
 }
 
 // GPIO types

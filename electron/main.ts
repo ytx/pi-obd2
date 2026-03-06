@@ -496,6 +496,7 @@ function registerIpcHandlers(): void {
         else if (/^ttyUSB\d+$/.test(name)) type = 'ttyUSB';
         else if (/^ttyACM\d+$/.test(name)) type = 'ttyACM';
         else if (/^ttyOBD2$/.test(name)) type = 'ttyOBD2';
+        else if (/^ttyGPS$/.test(name)) type = 'ttyGPS';
         else if (/^ttyS\d+$/.test(name)) {
           // Only include real serial ports (filter out virtual)
           const sysPath = `/sys/class/tty/${name}/device`;
