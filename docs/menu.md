@@ -1,27 +1,27 @@
 
 # Menu Items
 
-- Values
-- DTCs
+- Values(list)
+- DTCs(car_crash)
 - (empty)
 - (empty)
 - (empty)
 
-- Bluetooth
-- OBD2
-- GPS
+- Bluetooth(settings_bluetooth)
+- OBD2(browse_activity)
+- GPS(satellite_alt)
 - (empty)
 - (empty)
 
-- Display
-- Board
+- Display(display_settings)
+- Board(select_window_2)
 - (empty)
-- Layout
-- Theme
+- Layout(dashboard_2_edit)
+- Theme(wall_art)
 
-- System
+- System(settings)
 - (empty)
-- (empty)
-- Dev
-- About
+- Terminal(terminal)
+- Dev(logo_dev)
+- About(info)
 

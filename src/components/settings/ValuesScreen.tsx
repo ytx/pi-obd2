@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { useAppStore } from '@/stores/useAppStore';
 import { useOBDStore } from '@/stores/useOBDStore';
 import { usePidConfigStore } from '@/stores/usePidConfigStore';
@@ -183,16 +183,10 @@ function ValuesScreen() {
   const configs = usePidConfigStore((s) => s.configs);
 
   const [expandedPid, setExpandedPid] = useState<string | null>(null);
-  const [useOnlyFilter, setUseOnlyFilter] = useState(false);
-  const [, setRefreshTick] = useState(0);
-
-  const handleRefresh = useCallback(() => {
-    setRefreshTick((t) => t + 1);
-  }, []);
-
-  const filteredPids = useOnlyFilter
-    ? availablePids.filter((p) => configs[p.id]?.use !== false)
-    : availablePids;
+  const [showAll, setShowAll] = useState(false);
+  const filteredPids = showAll
+    ? availablePids
+    : availablePids.filter((p) => configs[p.id]?.use !== false);
 
   return (
     <div className="h-full flex flex-col bg-obd-dark p-6">
@@ -210,22 +204,19 @@ function ValuesScreen() {
 
       {/* Toolbar */}
       <div className="flex items-center gap-3 mb-3">
-        <button
-          onClick={handleRefresh}
-          className="px-3 py-1 text-sm bg-obd-surface text-obd-accent border border-obd-dim rounded hover:bg-obd-dim/30 transition-colors"
-        >
-          Refresh
-        </button>
-        <button
-          onClick={() => setUseOnlyFilter(!useOnlyFilter)}
-          className={`px-3 py-1 text-sm rounded border transition-colors ${
-            useOnlyFilter
-              ? 'bg-green-700 border-green-600 text-white'
-              : 'bg-obd-surface border-obd-dim text-obd-dim'
-          }`}
-        >
-          {useOnlyFilter ? 'Use Only' : 'All'}
-        </button>
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <div
+            onClick={() => setShowAll(!showAll)}
+            className={`w-9 h-5 rounded-full relative transition-colors ${
+              showAll ? 'bg-green-600' : 'bg-obd-dim/50'
+            }`}
+          >
+            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
+              showAll ? 'left-[18px]' : 'left-0.5'
+            }`} />
+          </div>
+          <span className="text-sm text-gray-300">Show All</span>
+        </label>
         <span className="text-xs text-obd-dim ml-auto">
           {filteredPids.length} / {availablePids.length} PIDs
         </span>

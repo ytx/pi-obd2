@@ -12,6 +12,7 @@ function TerminalScreen() {
 
   useEffect(() => {
     if (!containerRef.current) return;
+    let cancelled = false;
 
     const term = new Terminal({
       cursorBlink: true,
@@ -26,15 +27,11 @@ function TerminalScreen() {
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.open(containerRef.current);
-    fitAddon.fit();
 
     termRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    const { cols, rows } = term;
-    window.obd2API.terminalSpawn(cols, rows);
-
-    // PTY output → xterm
+    // PTY output → xterm (register before spawn so no data is lost)
     const removeOutput = window.obd2API.onTerminalOutput((data: string) => {
       term.write(data);
     });
@@ -54,6 +51,15 @@ function TerminalScreen() {
       window.obd2API.terminalResize(cols, rows);
     });
 
+    // Wait for layout to settle before fit + spawn
+    // requestAnimationFrame ensures container has actual dimensions
+    requestAnimationFrame(() => {
+      if (cancelled) return;
+      fitAddon.fit();
+      const { cols, rows } = term;
+      window.obd2API.terminalSpawn(cols, rows);
+    });
+
     // Container resize → fit
     const ro = new ResizeObserver(() => {
       try {
@@ -65,6 +71,7 @@ function TerminalScreen() {
     ro.observe(containerRef.current);
 
     return () => {
+      cancelled = true;
       ro.disconnect();
       onDataDisposable.dispose();
       onResizeDisposable.dispose();
@@ -89,7 +96,12 @@ function TerminalScreen() {
         <h1 className="text-2xl font-bold text-white">Terminal</h1>
         <div className="w-20" />
       </div>
-      <div ref={containerRef} className="flex-1 px-4 pb-4" />
+      {/* Padding wrapper separate from xterm container — FitAddon measures
+          the container's inner dimensions, so padding on the container itself
+          causes rows/cols to be overcounted */}
+      <div className="flex-1 min-h-0 px-4 pb-4">
+        <div ref={containerRef} className="h-full w-full overflow-hidden" />
+      </div>
     </div>
   );
 }

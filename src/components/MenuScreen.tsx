@@ -3,32 +3,33 @@ import { Screen } from '@/types';
 
 interface TileConfig {
   label: string;
+  icon: string;
   screen: Screen;
   color: string;
 }
 
 const tiles: (TileConfig | null)[] = [
   // Row 1
-  { label: 'Values', screen: 'values', color: 'bg-emerald-700' },
-  { label: 'DTCs', screen: 'dtc', color: 'bg-red-700' },
+  { label: 'Values', icon: 'list', screen: 'values', color: 'bg-emerald-700' },
+  { label: 'DTCs', icon: 'car_crash', screen: 'dtc', color: 'bg-red-700' },
   null, null, null,
   // Row 2
-  { label: 'Bluetooth', screen: 'bluetooth', color: 'bg-blue-700' },
-  { label: 'OBD2', screen: 'obd2', color: 'bg-green-700' },
-  { label: 'GPS', screen: 'gps', color: 'bg-cyan-700' },
+  { label: 'Bluetooth', icon: 'settings_bluetooth', screen: 'bluetooth', color: 'bg-blue-700' },
+  { label: 'OBD2', icon: 'browse_activity', screen: 'obd2', color: 'bg-green-700' },
+  { label: 'GPS', icon: 'satellite_alt', screen: 'gps', color: 'bg-cyan-700' },
   null, null,
   // Row 3
-  { label: 'Display', screen: 'display-settings', color: 'bg-indigo-700' },
-  { label: 'Board', screen: 'board-settings', color: 'bg-violet-700' },
+  { label: 'Display', icon: 'display_settings', screen: 'display-settings', color: 'bg-indigo-700' },
+  { label: 'Board', icon: 'select_window_2', screen: 'board-settings', color: 'bg-violet-700' },
   null,
-  { label: 'Layout', screen: 'layout-editor', color: 'bg-purple-700' },
-  { label: 'Theme', screen: 'theme-editor', color: 'bg-amber-700' },
+  { label: 'Layout', icon: 'dashboard_2_edit', screen: 'layout-editor', color: 'bg-purple-700' },
+  { label: 'Theme', icon: 'wall_art', screen: 'theme-editor', color: 'bg-amber-700' },
   // Row 4
-  { label: 'System', screen: 'system-settings', color: 'bg-teal-700' },
+  { label: 'System', icon: 'settings', screen: 'system-settings', color: 'bg-teal-700' },
   null,
-  { label: 'Terminal', screen: 'terminal', color: 'bg-zinc-700' },
-  { label: 'Dev', screen: 'dev-settings', color: 'bg-gray-700' },
-  { label: 'About', screen: 'about', color: 'bg-slate-700' },
+  { label: 'Terminal', icon: 'terminal', screen: 'terminal', color: 'bg-zinc-700' },
+  { label: 'Dev', icon: 'logo_dev', screen: 'dev-settings', color: 'bg-gray-700' },
+  { label: 'About', icon: 'info', screen: 'about', color: 'bg-slate-700' },
 ];
 
 function MenuScreen() {
@@ -56,9 +57,10 @@ function MenuScreen() {
             <button
               key={i}
               onClick={() => setScreen(tile.screen)}
-              className={`${tile.color} rounded-lg flex items-center justify-center text-white text-lg font-semibold hover:brightness-125 transition-all active:scale-95`}
+              className={`${tile.color} rounded-lg flex flex-col items-center justify-center gap-1 text-white hover:brightness-125 transition-all active:scale-95`}
             >
-              {tile.label}
+              <span className="material-symbols-outlined text-3xl">{tile.icon}</span>
+              <span className="text-sm font-semibold">{tile.label}</span>
             </button>
           );
         })}
