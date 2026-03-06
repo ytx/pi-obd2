@@ -1,15 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Protocol } from 'pmtiles';
 import { layers, namedTheme } from 'protomaps-themes-base';
+import { ensurePmtilesProtocol } from '@/lib/pmtiles-protocol';
 import { useOBDStore } from '@/stores/useOBDStore';
 import { useGpioStore } from '@/stores/useGpioStore';
 import { useMapStore } from '@/stores/useMapStore';
-
-// Register pmtiles protocol once
-const pmtilesProtocol = new Protocol();
-maplibregl.addProtocol('pmtiles', pmtilesProtocol.tile);
 
 type MapTheme = 'light' | 'dark';
 
@@ -47,6 +43,7 @@ function MapPanel() {
   const destMarkerRef = useRef<maplibregl.Marker | null>(null);
   const [tilesUrl, setTilesUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mapReady, setMapReady] = useState(false);
   const themeRef = useRef<MapTheme>('dark');
   const userInteractingRef = useRef(false);
   const interactTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -86,6 +83,7 @@ function MapPanel() {
   useEffect(() => {
     if (!containerRef.current || !tilesUrl) return;
 
+    ensurePmtilesProtocol();
     themeRef.current = mapTheme;
     const map = new maplibregl.Map({
       container: containerRef.current,
@@ -116,11 +114,11 @@ function MapPanel() {
       map.on(ev, onInteractEnd);
     }
 
-    // Add route line source/layer after load
-    map.on('load', () => {
+    // Add route line source/layer after style loads (faster than 'load' which waits for all tiles)
+    map.once('style.load', () => {
       map.addSource('route-line', {
         type: 'geojson',
-        data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] }, properties: {} },
+        data: { type: 'FeatureCollection', features: [] },
       });
       map.addLayer({
         id: 'route-line-layer',
@@ -128,10 +126,12 @@ function MapPanel() {
         source: 'route-line',
         paint: {
           'line-color': '#ff4444',
-          'line-width': 2,
-          'line-dasharray': [4, 4],
+          'line-width': 3,
+          'line-dasharray': [6, 4],
         },
       });
+      map.resize();
+      setMapReady(true);
     });
 
     return () => {
@@ -142,6 +142,7 @@ function MapPanel() {
       destMarkerRef.current = null;
       map.remove();
       mapRef.current = null;
+      setMapReady(false);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tilesUrl]);
@@ -151,26 +152,26 @@ function MapPanel() {
     const map = mapRef.current;
     if (!map || !tilesUrl || themeRef.current === mapTheme) return;
     themeRef.current = mapTheme;
+    setMapReady(false);
     map.setStyle(makeStyle(tilesUrl, mapTheme));
     // Re-add route line source/layer after style change
     map.once('style.load', () => {
       if (!map.getSource('route-line')) {
         map.addSource('route-line', {
           type: 'geojson',
-          data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] }, properties: {} },
+          data: { type: 'FeatureCollection', features: [] },
         });
         map.addLayer({
           id: 'route-line-layer',
           type: 'line',
           source: 'route-line',
           paint: {
-            'line-color': '#ff4444',
-            'line-width': 2,
-            'line-dasharray': [4, 4],
+            'line-color': '#00ff00',
+            'line-width': 5,
           },
         });
       }
-      updateRouteLine();
+      setMapReady(true);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapTheme, tilesUrl]);
@@ -247,9 +248,10 @@ function MapPanel() {
   }, [activeDest, tilesUrl]);
 
   // Route line between current location and destination
-  const updateRouteLine = useCallback(() => {
+  // Route line between current location and destination
+  useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || !mapReady) return;
     const source = map.getSource('route-line') as maplibregl.GeoJSONSource | undefined;
     if (!source) return;
 
@@ -261,20 +263,11 @@ function MapPanel() {
       });
     } else {
       source.setData({
-        type: 'Feature',
-        geometry: { type: 'LineString', coordinates: [] },
-        properties: {},
+        type: 'FeatureCollection',
+        features: [],
       });
     }
-  }, [lat, lon, activeDest]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    if (map.loaded() && map.getSource('route-line')) {
-      updateRouteLine();
-    }
-  }, [updateRouteLine]);
+  }, [lat, lon, activeDest, mapReady]);
 
   // Control handlers
   const handleCenterMe = useCallback(() => {
@@ -283,7 +276,7 @@ function MapPanel() {
     // Cancel interaction pause and resume auto-follow
     userInteractingRef.current = false;
     if (interactTimeoutRef.current) clearTimeout(interactTimeoutRef.current);
-    map.easeTo({ center: [lon, lat], zoom: map.getZoom(), duration: 500 });
+    map.jumpTo({ center: [lon, lat] });
   }, [lat, lon]);
 
   const handleFitBounds = useCallback(() => {

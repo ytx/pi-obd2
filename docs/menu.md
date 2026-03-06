@@ -3,7 +3,7 @@
 
 - Values(list, bg-emerald-700)
 - DTCs(car_crash, bg-red-700)
-- (empty)
+- Destination(pin_drop, bg-rose-700)
 - (empty)
 - (empty)
 
