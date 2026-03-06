@@ -1,9 +1,10 @@
 import fs from 'fs';
 import { constants } from 'fs';
 import { execFileSync } from 'child_process';
-import { DataSource } from './data-source';
+import { DataSource, DtcEntry } from './data-source';
 import { OBDValue, OBDConnectionState } from './types';
 import { OBD_PIDS } from './pids';
+import { getDtcDescription } from './dtc-codes';
 import { logger } from '../logger';
 
 const COMMAND_TIMEOUT = 10000;
@@ -86,6 +87,82 @@ export class ELM327Source implements DataSource {
 
   onConnectionChange(callback: (state: OBDConnectionState) => void): void {
     this.connectionCallbacks.push(callback);
+  }
+
+  async readDtc(): Promise<DtcEntry[]> {
+    if (this.state !== 'connected') return [];
+    const gen = this.generation;
+    const wasPolling = this.polling;
+    if (wasPolling) {
+      this.pollAbort = true;
+      this.polling = false;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    try {
+      const resp = await this.sendCommand('03', gen);
+      logger.info('ELM327', `Mode 03 → ${this.sanitize(resp)}`);
+      const codes = this.parseDtcResponse(resp);
+      return codes.map((code) => ({ code, description: getDtcDescription(code) }));
+    } catch (err) {
+      logger.error('ELM327', `readDtc failed: ${err}`);
+      return [];
+    } finally {
+      if (wasPolling && gen === this.generation && this.state === 'connected') {
+        this.startPolling(gen);
+      }
+    }
+  }
+
+  async clearDtc(): Promise<void> {
+    if (this.state !== 'connected') return;
+    const gen = this.generation;
+    const wasPolling = this.polling;
+    if (wasPolling) {
+      this.pollAbort = true;
+      this.polling = false;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    try {
+      const resp = await this.sendCommand('04', gen);
+      logger.info('ELM327', `Mode 04 → ${this.sanitize(resp)}`);
+    } catch (err) {
+      logger.error('ELM327', `clearDtc failed: ${err}`);
+    } finally {
+      if (wasPolling && gen === this.generation && this.state === 'connected') {
+        this.startPolling(gen);
+      }
+    }
+  }
+
+  private parseDtcResponse(resp: string): string[] {
+    const clean = resp.replace(/[\s\r\n]/g, '').toUpperCase();
+    const codes: string[] = [];
+    // Find all "43" headers (Mode 03 response = 0x40 + 0x03)
+    let pos = 0;
+    while (pos < clean.length) {
+      const idx = clean.indexOf('43', pos);
+      if (idx === -1) break;
+      // After "43", there's 1 byte (2 hex chars) for byte count in some protocols,
+      // but with ATH0/ATS0 the response is just "43" followed by DTC pairs.
+      // Each DTC is 2 bytes (4 hex chars). A single response line has up to 3 DTCs (6 bytes after header).
+      let dataStart = idx + 2;
+      // Parse up to 3 DTCs per "43" frame
+      for (let i = 0; i < 3; i++) {
+        if (dataStart + 4 > clean.length) break;
+        const hex = clean.substring(dataStart, dataStart + 4);
+        dataStart += 4;
+        const val = parseInt(hex, 16);
+        if (isNaN(val) || val === 0) continue; // 0x0000 = padding
+        const category = ['P', 'C', 'B', 'U'][(val >> 14) & 0x03];
+        const digit2 = (val >> 12) & 0x03;
+        const digit3 = (val >> 8) & 0x0F;
+        const digit4 = (val >> 4) & 0x0F;
+        const digit5 = val & 0x0F;
+        codes.push(`${category}${digit2}${digit3.toString(16).toUpperCase()}${digit4.toString(16).toUpperCase()}${digit5.toString(16).toUpperCase()}`);
+      }
+      pos = dataStart;
+    }
+    return codes;
   }
 
   dispose(): void {

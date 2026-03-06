@@ -38,6 +38,11 @@ const obd2API = {
     return () => { ipcRenderer.removeListener('obd-connection-change', listener); };
   },
 
+  // DTC
+  dtcRead: (): Promise<Array<{ code: string; description: string }>> =>
+    ipcRenderer.invoke('dtc-read'),
+  dtcClear: (): Promise<void> => ipcRenderer.invoke('dtc-clear'),
+
   // Stub control
   stubGetProfiles: (): Promise<string[]> => ipcRenderer.invoke('stub-get-profiles'),
   stubSetProfile: (name: string): Promise<void> => ipcRenderer.invoke('stub-set-profile', name),

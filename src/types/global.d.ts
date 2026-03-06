@@ -25,6 +25,10 @@ declare global {
       onOBDData: (callback: (values: OBDValue[]) => void) => () => void;
       onOBDConnectionChange: (callback: (state: string) => void) => () => void;
 
+      // DTC
+      dtcRead: () => Promise<Array<{ code: string; description: string }>>;
+      dtcClear: () => Promise<void>;
+
       // Stub control
       stubGetProfiles: () => Promise<string[]>;
       stubSetProfile: (name: string) => Promise<void>;

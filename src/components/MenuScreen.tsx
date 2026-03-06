@@ -8,15 +8,17 @@ interface TileConfig {
 }
 
 const tiles: (TileConfig | null)[] = [
-  null,
   { label: 'Bluetooth', screen: 'bluetooth', color: 'bg-blue-700' },
   { label: 'OBD2', screen: 'obd2', color: 'bg-green-700' },
   { label: 'Display', screen: 'display-settings', color: 'bg-indigo-700' },
   { label: 'Layout', screen: 'layout-editor', color: 'bg-purple-700' },
   { label: 'Theme', screen: 'theme-editor', color: 'bg-amber-700' },
   { label: 'System', screen: 'system-settings', color: 'bg-teal-700' },
-  null,
   { label: 'Dev', screen: 'dev-settings', color: 'bg-gray-700' },
+  { label: 'DTCs', screen: 'dtc', color: 'bg-red-700' },
+  null, null,
+  null, null, null, null, null,
+  null, null, null, null, null,
 ];
 
 function MenuScreen() {
@@ -30,7 +32,7 @@ function MenuScreen() {
         if (e.target === e.currentTarget) setScreen('dashboard');
       }}
     >
-      <div className="grid grid-cols-3 grid-rows-3 gap-4 w-[480px] h-[360px]">
+      <div className="grid grid-cols-5 grid-rows-4 gap-4 w-[700px] h-[420px]">
         {tiles.map((tile, i) => {
           if (!tile) {
             return (

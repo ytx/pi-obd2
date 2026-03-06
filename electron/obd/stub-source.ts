@@ -1,6 +1,7 @@
-import { DataSource } from './data-source';
+import { DataSource, DtcEntry } from './data-source';
 import { OBDValue, OBDConnectionState, StubConfig, StubPidConfig, StubProfileName } from './types';
 import { OBD_PIDS } from './pids';
+import { getDtcDescription } from './dtc-codes';
 
 const STUB_PROFILES: Record<StubProfileName, Record<string, StubPidConfig>> = {
   idle: {
@@ -95,6 +96,16 @@ export class StubSource implements DataSource {
 
   onConnectionChange(callback: (state: OBDConnectionState) => void): void {
     this.connectionCallbacks.push(callback);
+  }
+
+  async readDtc(): Promise<DtcEntry[]> {
+    if (this.state !== 'connected') return [];
+    const stubCodes = ['P0101', 'P0300', 'P0420'];
+    return stubCodes.map((code) => ({ code, description: getDtcDescription(code) }));
+  }
+
+  async clearDtc(): Promise<void> {
+    // stub: no-op
   }
 
   dispose(): void {

@@ -271,6 +271,27 @@ function registerIpcHandlers(): void {
     return isStubMode;
   });
 
+  ipcMain.handle('dtc-read', async () => {
+    const ds = dataSource;
+    if (!ds) return [];
+    try {
+      return await ds.readDtc();
+    } catch (err) {
+      logger.error('dtc', `dtc-read failed: ${err}`);
+      return [];
+    }
+  });
+
+  ipcMain.handle('dtc-clear', async () => {
+    const ds = dataSource;
+    if (!ds) return;
+    try {
+      await ds.clearDtc();
+    } catch (err) {
+      logger.error('dtc', `dtc-clear failed: ${err}`);
+    }
+  });
+
   // --- Stub-specific IPC ---
   ipcMain.handle('stub-get-profiles', () => {
     if (!(dataSource instanceof StubSource)) {
