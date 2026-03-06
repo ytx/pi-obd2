@@ -8,18 +8,26 @@ interface TileConfig {
 }
 
 const tiles: (TileConfig | null)[] = [
+  // Row 1
+  { label: 'Values', screen: 'values', color: 'bg-emerald-700' },
+  { label: 'DTCs', screen: 'dtc', color: 'bg-red-700' },
+  null, null, null,
+  // Row 2
   { label: 'Bluetooth', screen: 'bluetooth', color: 'bg-blue-700' },
   { label: 'OBD2', screen: 'obd2', color: 'bg-green-700' },
+  { label: 'GPS', screen: 'gps', color: 'bg-cyan-700' },
+  null, null,
+  // Row 3
   { label: 'Display', screen: 'display-settings', color: 'bg-indigo-700' },
+  { label: 'Board', screen: 'board-settings', color: 'bg-violet-700' },
+  null,
   { label: 'Layout', screen: 'layout-editor', color: 'bg-purple-700' },
   { label: 'Theme', screen: 'theme-editor', color: 'bg-amber-700' },
+  // Row 4
   { label: 'System', screen: 'system-settings', color: 'bg-teal-700' },
+  null, null,
   { label: 'Dev', screen: 'dev-settings', color: 'bg-gray-700' },
-  { label: 'DTCs', screen: 'dtc', color: 'bg-red-700' },
-  { label: 'GPS', screen: 'gps', color: 'bg-cyan-700' },
-  null,
-  null, null, null, null, null,
-  null, null, null, null, null,
+  { label: 'About', screen: 'about', color: 'bg-slate-700' },
 ];
 
 function MenuScreen() {

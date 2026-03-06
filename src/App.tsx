@@ -12,7 +12,10 @@ import ThemeEditorScreen from '@/components/settings/ThemeEditorScreen';
 import BluetoothScreen from '@/components/settings/BluetoothScreen';
 import OBD2Screen from '@/components/settings/OBD2Screen';
 import DtcScreen from '@/components/settings/DtcScreen';
+import BoardSettingsScreen from '@/components/settings/BoardSettingsScreen';
 import GpsScreen from '@/components/settings/GpsScreen';
+import ValuesScreen from '@/components/settings/ValuesScreen';
+import AboutScreen from '@/components/settings/AboutScreen';
 
 function App() {
   const { currentScreen, setHostname } = useAppStore();
@@ -45,6 +48,7 @@ function App() {
       {currentScreen === 'menu' && <MenuScreen />}
       {currentScreen === 'system-settings' && <SystemSettingsScreen />}
       {currentScreen === 'display-settings' && <DisplaySettingsScreen />}
+      {currentScreen === 'board-settings' && <BoardSettingsScreen />}
       {currentScreen === 'layout-editor' && <LayoutEditorScreen />}
       {currentScreen === 'dev-settings' && <DevSettingsScreen />}
       {currentScreen === 'theme-editor' && <ThemeEditorScreen />}
@@ -52,6 +56,8 @@ function App() {
       {currentScreen === 'obd2' && <OBD2Screen />}
       {currentScreen === 'dtc' && <DtcScreen />}
       {currentScreen === 'gps' && <GpsScreen />}
+      {currentScreen === 'values' && <ValuesScreen />}
+      {currentScreen === 'about' && <AboutScreen />}
     </div>
   );
 }

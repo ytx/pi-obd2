@@ -1,6 +1,5 @@
 import { useAppStore } from '@/stores/useAppStore';
 import { useBoardStore } from '@/stores/useBoardStore';
-import BoardEditSection from '@/components/settings/BoardEditSection';
 import ThemeSection from '@/components/settings/ThemeSection';
 
 function DisplaySettingsScreen() {
@@ -16,11 +15,13 @@ function DisplaySettingsScreen() {
         >
           &larr; Back
         </button>
-        <h1 className="text-2xl font-bold text-white">Display Settings</h1>
+        <h1 className="text-2xl font-bold text-white">Display</h1>
         <div className="w-20" />
       </div>
 
       <div className="flex-1 overflow-auto space-y-4">
+        <ThemeSection />
+
         {/* Screen Padding */}
         <section className="bg-obd-panel rounded-lg p-4">
           <h2 className="text-lg font-semibold text-white mb-3">Screen Padding</h2>
@@ -36,9 +37,6 @@ function DisplaySettingsScreen() {
             <span className="text-white font-mono w-16 text-right">{screenPadding} px</span>
           </div>
         </section>
-
-        <ThemeSection />
-        <BoardEditSection />
       </div>
     </div>
   );

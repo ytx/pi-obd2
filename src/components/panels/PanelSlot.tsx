@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useBoardStore } from '@/stores/useBoardStore';
 import { useOBDStore } from '@/stores/useOBDStore';
+import { usePidConfigStore } from '@/stores/usePidConfigStore';
 import { BoardSlot, MeterConfig, GraphConfig, NumericConfig } from '@/types';
 import NumericPanel from './NumericPanel';
 import MeterPanel from './MeterPanel';
@@ -13,6 +14,7 @@ interface PanelSlotProps {
 function PanelSlot({ slot }: PanelSlotProps) {
   const getPanelDef = useBoardStore((s) => s.getPanelDef);
   const availablePids = useOBDStore((s) => s.availablePids);
+  const configs = usePidConfigStore((s) => s.configs);
 
   const resolved = useMemo(() => {
     if (!slot) return null;
@@ -20,13 +22,14 @@ function PanelSlot({ slot }: PanelSlotProps) {
     if (!panel) return null;
 
     const pidInfo = availablePids.find((p) => p.id === slot.pid);
-    const title = slot.title ?? pidInfo?.name ?? slot.pid;
-    const unit = slot.unit ?? pidInfo?.unit ?? '';
-    const min = slot.min ?? pidInfo?.min ?? 0;
-    const max = slot.max ?? pidInfo?.max ?? 100;
+    const userConfig = configs[slot.pid];
+    const title = slot.title ?? userConfig?.name ?? pidInfo?.name ?? slot.pid;
+    const unit = slot.unit ?? userConfig?.unit ?? pidInfo?.unit ?? '';
+    const min = slot.min ?? userConfig?.min ?? pidInfo?.min ?? 0;
+    const max = slot.max ?? userConfig?.max ?? pidInfo?.max ?? 100;
 
     return { panel, title, unit, min, max };
-  }, [slot, getPanelDef, availablePids]);
+  }, [slot, getPanelDef, availablePids, configs]);
 
   if (!slot || !resolved) {
     return <div className="bg-obd-surface/30 rounded-lg" />;

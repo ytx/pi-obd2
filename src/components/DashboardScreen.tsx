@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '@/stores/useAppStore';
 import { useOBDStore } from '@/stores/useOBDStore';
 import { useBoardStore } from '@/stores/useBoardStore';
@@ -29,6 +29,10 @@ function DashboardScreen() {
     setGpsStubMode,
   } = useGpsStore();
   const screenPadding = useBoardStore((s) => s.screenPadding);
+
+  // WiFi & USB state for indicators
+  const [wifiConnected, setWifiConnected] = useState(false);
+  const [usbMounted, setUsbMounted] = useState(false);
 
   // GPIO saved state refs (for restoring on OFF)
   const savedThemeIdRef = useRef<string | null | undefined>(undefined);
@@ -99,6 +103,18 @@ function DashboardScreen() {
       removeGpsConn();
     };
   }, [setAvailablePids, setStubMode, setConnectionState, updateValues, setProfiles, setAvailableThemes, setGpsConnectionState, setGpsStubMode]);
+
+  // Poll WiFi and USB state for indicators
+  useEffect(() => {
+    if (!window.obd2API) return;
+    const poll = () => {
+      window.obd2API.wifiGetCurrent().then((ssid) => setWifiConnected(ssid !== null)).catch(() => {});
+      window.obd2API.isUsbMounted().then(setUsbMounted).catch(() => {});
+    };
+    poll();
+    const id = setInterval(poll, 5000);
+    return () => clearInterval(id);
+  }, []);
 
   // GPIO change listener — illumination (theme switch) and reverse (board switch)
   useEffect(() => {
@@ -212,10 +228,12 @@ function DashboardScreen() {
         )}
       </div>
 
-      {/* Connection state icons overlay - top-right */}
+      {/* Status icons overlay - top-right */}
       <div className="absolute top-2 right-2 pointer-events-none flex flex-col gap-1">
-        <span className={`material-symbols-outlined text-base ${obdColor}`}>directions_car</span>
+        <span className={`material-symbols-outlined text-base ${usbMounted ? 'text-green-400' : 'text-red-500'}`}>usb</span>
+        <span className={`material-symbols-outlined text-base ${wifiConnected ? 'text-green-400' : 'text-red-500'}`}>wifi</span>
         <span className={`material-symbols-outlined text-base ${gpsColor}`}>satellite_alt</span>
+        <span className={`material-symbols-outlined text-base ${obdColor}`}>directions_car</span>
       </div>
 
       {/* Tap zone - top-left: Menu */}

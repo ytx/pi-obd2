@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useBoardStore } from '@/stores/useBoardStore';
 import { useOBDStore } from '@/stores/useOBDStore';
+import { usePidConfigStore } from '@/stores/usePidConfigStore';
 import { BoardSlot } from '@/types';
 
 function BoardEditSection() {
@@ -20,6 +21,7 @@ function BoardEditSection() {
   const selectedBoard = boards.find((b) => b.id === selectedBoardId);
   const layout = selectedBoard ? layouts[selectedBoard.layoutId] : null;
   const availablePids = useOBDStore((s) => s.availablePids);
+  const pidConfigs = usePidConfigStore((s) => s.configs);
   const allPanelDefs = Object.values(panelDefs);
   const allLayouts = Object.values(layouts);
 
@@ -261,11 +263,13 @@ function BoardEditSection() {
                       }
                       className="flex-1 px-1 py-1 text-xs bg-obd-surface text-white border border-obd-dim rounded"
                     >
-                      {availablePids.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} ({p.unit})
-                        </option>
-                      ))}
+                      {availablePids
+                        .filter((p) => pidConfigs[p.id]?.use !== false || p.id === slot.pid)
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} ({p.unit})
+                          </option>
+                        ))}
                     </select>
                   )}
                   {/* Edit toggle */}
