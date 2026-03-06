@@ -162,6 +162,19 @@ const obd2API = {
   // Map
   mapListTiles: (): Promise<Array<{ path: string; name: string; size: number }>> =>
     ipcRenderer.invoke('map-list-tiles'),
+  tilesGetStatus: (): Promise<{ mounted: boolean; device: string | null; mountpoint: string | null }> =>
+    ipcRenderer.invoke('tiles-get-status'),
+  tilesAutoMount: (): Promise<{ success: boolean; device?: string; error?: string }> =>
+    ipcRenderer.invoke('tiles-auto-mount'),
+  tilesDownload: (bbox: [number, number, number, number], maxzoom: number): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('tiles-download', bbox, maxzoom),
+  tilesDownloadCancel: (): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('tiles-download-cancel'),
+  onTilesDownloadProgress: (callback: (message: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, message: string) => callback(message);
+    ipcRenderer.on('tiles-download-progress', listener);
+    return () => { ipcRenderer.removeListener('tiles-download-progress', listener); };
+  },
 
   // Logs
   getLogs: (): Promise<Array<{ timestamp: string; level: string; tag: string; message: string }>> =>

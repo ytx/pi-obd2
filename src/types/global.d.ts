@@ -103,6 +103,11 @@ declare global {
 
       // Map
       mapListTiles: () => Promise<Array<{ path: string; name: string; size: number }>>;
+      tilesGetStatus: () => Promise<{ mounted: boolean; device: string | null; mountpoint: string | null }>;
+      tilesAutoMount: () => Promise<{ success: boolean; device?: string; error?: string }>;
+      tilesDownload: (bbox: [number, number, number, number], maxzoom: number) => Promise<{ success: boolean; error?: string }>;
+      tilesDownloadCancel: () => Promise<{ success: boolean; error?: string }>;
+      onTilesDownloadProgress: (callback: (message: string) => void) => () => void;
 
       // Logs
       getLogs: () => Promise<Array<{ timestamp: string; level: string; tag: string; message: string }>>;

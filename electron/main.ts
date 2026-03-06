@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, protocol } from 'electron';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
-import { execSync } from 'child_process';
+import { execSync, spawn as cpSpawn, ChildProcess } from 'child_process';
 import { StubSource } from './obd/stub-source';
 import { ELM327Source } from './obd/elm327-source';
 import { DataSource } from './obd/data-source';
@@ -25,6 +25,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 const USB_MOUNT_POINT = '/mnt/obd2-usb';
+const TILES_MOUNT_POINT = '/mnt/obd2-tiles';
 
 let mainWindow: BrowserWindow | null = null;
 const btManager = new BluetoothManager();
@@ -40,6 +41,11 @@ let usbResetInProgress = false; // Prevent overlapping resets
 
 // Terminal
 let terminalManager: TerminalManager | null = null;
+
+// Tiles USB
+let tilesMounted = false;
+let tilesDevice: string | null = null;
+let tilesDownloadProcess: ChildProcess | null = null;
 
 // GPS source
 let gpsSource: GpsSource | null = null;
@@ -829,6 +835,7 @@ function registerIpcHandlers(): void {
   // --- Map IPC ---
   ipcMain.handle('map-list-tiles', () => {
     const dirs = [
+      path.join(TILES_MOUNT_POINT, 'tiles'),
       path.join(os.homedir(), 'tiles'),
       path.join(__dirname, '..', 'tiles'),
       path.join(__dirname, '..', 'scripts'),
@@ -847,6 +854,194 @@ function registerIpcHandlers(): void {
     }
     return files;
   });
+
+  // --- Tiles USB ---
+
+  ipcMain.handle('tiles-get-status', () => {
+    return { mounted: tilesMounted, device: tilesDevice, mountpoint: tilesMounted ? TILES_MOUNT_POINT : null };
+  });
+
+  ipcMain.handle('tiles-auto-mount', async () => {
+    return autoMountTilesUsb();
+  });
+
+  ipcMain.handle('tiles-download', async (_event, bbox: [number, number, number, number], maxzoom: number) => {
+    if (!tilesMounted || !tilesDevice) {
+      return { success: false, error: 'Tiles USB not mounted' };
+    }
+    const pmtilesCmd = findPmtilesCli();
+    if (!pmtilesCmd) {
+      return { success: false, error: 'pmtiles CLI not found' };
+    }
+
+    // Remount rw
+    try {
+      execSync(`sudo mount -o remount,rw ${TILES_MOUNT_POINT}`, { stdio: 'pipe' });
+      logger.info('tiles', 'Remounted rw for download');
+    } catch (err) {
+      logger.error('tiles', `Remount rw failed: ${err}`);
+      return { success: false, error: `Remount rw failed: ${err}` };
+    }
+
+    const tilesDir = path.join(TILES_MOUNT_POINT, 'tiles');
+    try { fs.mkdirSync(tilesDir, { recursive: true }); } catch { /* exists */ }
+
+    const outputPath = path.join(tilesDir, 'map.pmtiles');
+    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const sourceUrl = `https://build.protomaps.com/${today}.pmtiles`;
+    const [west, south, east, north] = bbox;
+
+    const args = [
+      'extract', sourceUrl, outputPath,
+      `--bbox=${west},${south},${east},${north}`,
+      `--maxzoom=${maxzoom}`,
+    ];
+
+    logger.info('tiles', `Download: ${pmtilesCmd} ${args.join(' ')}`);
+
+    return new Promise<{ success: boolean; error?: string }>((resolve) => {
+      const proc = cpSpawn(pmtilesCmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      tilesDownloadProcess = proc;
+      let stderr = '';
+
+      proc.stderr?.on('data', (data: Buffer) => {
+        const text = data.toString();
+        stderr += text;
+        // Send progress to renderer
+        mainWindow?.webContents.send('tiles-download-progress', text.trim());
+      });
+
+      proc.stdout?.on('data', (data: Buffer) => {
+        const text = data.toString();
+        mainWindow?.webContents.send('tiles-download-progress', text.trim());
+      });
+
+      proc.on('close', (code) => {
+        tilesDownloadProcess = null;
+        // Remount ro
+        try {
+          execSync(`sudo mount -o remount,ro ${TILES_MOUNT_POINT}`, { stdio: 'pipe' });
+          logger.info('tiles', 'Remounted ro after download');
+        } catch (err) {
+          logger.error('tiles', `Remount ro failed: ${err}`);
+        }
+
+        if (code === 0) {
+          logger.info('tiles', 'Download complete');
+          resolve({ success: true });
+        } else {
+          logger.error('tiles', `Download failed (code ${code}): ${stderr}`);
+          resolve({ success: false, error: stderr || `Exit code ${code}` });
+        }
+      });
+
+      proc.on('error', (err) => {
+        tilesDownloadProcess = null;
+        try {
+          execSync(`sudo mount -o remount,ro ${TILES_MOUNT_POINT}`, { stdio: 'pipe' });
+        } catch { /* best effort */ }
+        logger.error('tiles', `Download spawn error: ${err}`);
+        resolve({ success: false, error: String(err) });
+      });
+    });
+  });
+
+  ipcMain.handle('tiles-download-cancel', () => {
+    if (tilesDownloadProcess) {
+      tilesDownloadProcess.kill('SIGTERM');
+      tilesDownloadProcess = null;
+      // Remount ro
+      try {
+        execSync(`sudo mount -o remount,ro ${TILES_MOUNT_POINT}`, { stdio: 'pipe' });
+      } catch { /* best effort */ }
+      logger.info('tiles', 'Download cancelled');
+      return { success: true };
+    }
+    return { success: false, error: 'No download in progress' };
+  });
+}
+
+function findPmtilesCli(): string | null {
+  // Check PATH
+  try {
+    execSync('which pmtiles', { stdio: 'pipe' });
+    return 'pmtiles';
+  } catch { /* not in PATH */ }
+  // Check scripts/pmtiles relative to app
+  const scriptPath = path.join(__dirname, '..', 'scripts', 'pmtiles');
+  if (fs.existsSync(scriptPath)) return scriptPath;
+  return null;
+}
+
+function getUsbPartitions(): { device: string; mountpoint: string | null }[] {
+  try {
+    const output = execSync('lsblk -J -o NAME,SIZE,TYPE,MOUNTPOINT,TRAN,RM', { encoding: 'utf-8' });
+    const data = JSON.parse(output);
+    const parts: { device: string; mountpoint: string | null }[] = [];
+    for (const dev of data.blockdevices) {
+      if (dev.tran === 'usb' && dev.rm && dev.children) {
+        for (const part of dev.children) {
+          if (part.type === 'part') {
+            parts.push({ device: `/dev/${part.name}`, mountpoint: part.mountpoint || null });
+          }
+        }
+      }
+    }
+    return parts;
+  } catch {
+    return [];
+  }
+}
+
+function autoMountTilesUsb(): { success: boolean; device?: string; error?: string } {
+  // Already mounted?
+  try {
+    execSync(`mountpoint -q ${TILES_MOUNT_POINT}`, { stdio: 'pipe' });
+    tilesMounted = true;
+    // Detect device from mount
+    if (!tilesDevice) {
+      try {
+        const mountInfo = execSync(`findmnt -n -o SOURCE ${TILES_MOUNT_POINT}`, { encoding: 'utf-8' }).trim();
+        tilesDevice = mountInfo || null;
+      } catch { /* ignore */ }
+    }
+    logger.info('tiles', `Already mounted at ${TILES_MOUNT_POINT}`);
+    return { success: true, device: tilesDevice || undefined };
+  } catch { /* not mounted */ }
+
+  const uid = process.getuid?.() ?? 1000;
+  const gid = process.getgid?.() ?? 1000;
+  const parts = getUsbPartitions();
+
+  for (const part of parts) {
+    // Skip partitions already mounted elsewhere (e.g., obd2-usb)
+    if (part.mountpoint && !part.mountpoint.includes('obd2-tiles')) continue;
+
+    // Temporarily mount to check for tiles/ folder
+    const tmpMount = '/tmp/obd2-tiles-check';
+    try {
+      execSync(`sudo mkdir -p ${tmpMount}`, { stdio: 'pipe' });
+      execSync(`sudo mount -t vfat -o ro,uid=${uid},gid=${gid} ${part.device} ${tmpMount}`, { stdio: 'pipe' });
+      const hasTiles = fs.existsSync(path.join(tmpMount, 'tiles'));
+      execSync(`sudo umount ${tmpMount}`, { stdio: 'pipe' });
+
+      if (hasTiles) {
+        // Mount at the real mount point
+        execSync(`sudo mkdir -p ${TILES_MOUNT_POINT}`, { stdio: 'pipe' });
+        execSync(`sudo mount -t vfat -o ro,uid=${uid},gid=${gid} ${part.device} ${TILES_MOUNT_POINT}`, { stdio: 'pipe' });
+        tilesMounted = true;
+        tilesDevice = part.device;
+        logger.info('tiles', `Mounted ${part.device} at ${TILES_MOUNT_POINT} (ro)`);
+        return { success: true, device: part.device };
+      }
+    } catch (err) {
+      try { execSync(`sudo umount ${tmpMount}`, { stdio: 'pipe' }); } catch { /* ignore */ }
+      logger.error('tiles', `Check ${part.device} failed: ${err}`);
+    }
+  }
+
+  logger.info('tiles', 'No USB with tiles/ folder found');
+  return { success: false, error: 'No USB with tiles/ folder found' };
 }
 
 /** Auto-mount USB if a device is present (for theme/config restoration after reboot) */
@@ -894,8 +1089,8 @@ function autoMountUsb(): void {
 app.whenReady().then(() => {
   // Register local-tiles protocol handler (serves local files with Range request support for PMTiles)
   protocol.handle('local-tiles', (request) => {
-    const filePath = decodeURIComponent(new URL(request.url).pathname);
     try {
+      const filePath = decodeURIComponent(new URL(request.url).pathname);
       const stat = fs.statSync(filePath);
       const rangeHeader = request.headers.get('Range');
       if (rangeHeader) {
@@ -903,7 +1098,9 @@ app.whenReady().then(() => {
         if (!match) return new Response(null, { status: 416 });
         const start = parseInt(match[1]);
         const end = match[2] ? parseInt(match[2]) : stat.size - 1;
-        const length = end - start + 1;
+        if (start >= stat.size) return new Response(null, { status: 416 });
+        const clampedEnd = Math.min(end, stat.size - 1);
+        const length = clampedEnd - start + 1;
         const buffer = Buffer.alloc(length);
         const fd = fs.openSync(filePath, 'r');
         fs.readSync(fd, buffer, 0, length, start);
@@ -912,8 +1109,18 @@ app.whenReady().then(() => {
           status: 206,
           headers: {
             'Content-Type': 'application/octet-stream',
-            'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+            'Content-Range': `bytes ${start}-${clampedEnd}/${stat.size}`,
             'Content-Length': String(length),
+            'Accept-Ranges': 'bytes',
+          },
+        });
+      }
+      // HEAD-like: return headers only for large files (PMTiles always uses Range)
+      if (stat.size > 64 * 1024 * 1024) {
+        return new Response(null, {
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': String(stat.size),
             'Accept-Ranges': 'bytes',
           },
         });
@@ -926,7 +1133,8 @@ app.whenReady().then(() => {
           'Accept-Ranges': 'bytes',
         },
       });
-    } catch {
+    } catch (err) {
+      logger.error('local-tiles', `Error serving ${request.url}: ${err}`);
       return new Response(null, { status: 404 });
     }
   });

@@ -72,9 +72,21 @@ function DestinationScreen() {
   const [destName, setDestName] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // Discover tiles
+  // Download state
+  const [downloadOpen, setDownloadOpen] = useState(false);
+  const [tilesMounted, setTilesMounted] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState('');
+  const [downloadMaxZoom, setDownloadMaxZoom] = useState(14);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  // Discover tiles + auto-mount tiles USB
   useEffect(() => {
     let cancelled = false;
+    window.obd2API.tilesAutoMount().then((res) => {
+      if (cancelled) return;
+      setTilesMounted(res.success);
+    });
     window.obd2API.mapListTiles().then((files) => {
       if (cancelled) return;
       if (files.length > 0) {
@@ -82,6 +94,14 @@ function DestinationScreen() {
       }
     });
     return () => { cancelled = true; };
+  }, []);
+
+  // Download progress listener
+  useEffect(() => {
+    const cleanup = window.obd2API.onTilesDownloadProgress((message) => {
+      setDownloadProgress(message);
+    });
+    return cleanup;
   }, []);
 
   // Initialize map
@@ -211,6 +231,40 @@ function DestinationScreen() {
     return { lat: c.lat, lon: c.lng };
   }, []);
 
+  const getMapBounds = useCallback((): [number, number, number, number] | null => {
+    const map = mapRef.current;
+    if (!map) return null;
+    const b = map.getBounds();
+    return [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+  }, []);
+
+  const handleDownload = async () => {
+    const bbox = getMapBounds();
+    if (!bbox) return;
+    setDownloading(true);
+    setDownloadError(null);
+    setDownloadProgress('Starting download...');
+    const result = await window.obd2API.tilesDownload(bbox, downloadMaxZoom);
+    setDownloading(false);
+    if (result.success) {
+      setDownloadProgress('Download complete!');
+      // Refresh tiles list (cache-bust to force PMTiles protocol to re-read)
+      const files = await window.obd2API.mapListTiles();
+      if (files.length > 0) {
+        setTilesUrl(`local-tiles://${files[0].path}?t=${Date.now()}`);
+      }
+    } else {
+      setDownloadError(result.error || 'Download failed');
+      setDownloadProgress('');
+    }
+  };
+
+  const handleDownloadCancel = async () => {
+    await window.obd2API.tilesDownloadCancel();
+    setDownloading(false);
+    setDownloadProgress('Cancelled');
+  };
+
   const handleSave = () => {
     const center = getMapCenter();
     if (!center || !destName.trim()) return;
@@ -284,9 +338,10 @@ function DestinationScreen() {
           {/* Crosshair */}
           {mapReady && (
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-              <div className="relative w-20 h-20">
-                <div className="absolute top-1/2 left-0 w-full border-t border-dashed border-white/60" />
-                <div className="absolute left-1/2 top-0 h-full border-l border-dashed border-white/60" />
+              <div className="relative w-24 h-24">
+                <div className="absolute top-1/2 left-0 w-full -mt-px" style={{ height: '3px', background: 'linear-gradient(90deg, transparent 0%, rgba(255,70,70,0.9) 30%, transparent 45%, transparent 55%, rgba(255,70,70,0.9) 70%, transparent 100%)' }} />
+                <div className="absolute left-1/2 top-0 h-full -ml-px" style={{ width: '3px', background: 'linear-gradient(180deg, transparent 0%, rgba(255,70,70,0.9) 30%, transparent 45%, transparent 55%, rgba(255,70,70,0.9) 70%, transparent 100%)' }} />
+                <div className="absolute top-1/2 left-1/2 w-2.5 h-2.5 rounded-full border-2 border-red-400/90" style={{ marginTop: '-5px', marginLeft: '-5px' }} />
               </div>
             </div>
           )}
@@ -420,6 +475,68 @@ function DestinationScreen() {
               );
             })}
           </div>
+
+          {/* Download Tiles toggle */}
+          <button
+            onClick={() => setDownloadOpen(!downloadOpen)}
+            className="bg-obd-surface rounded-lg px-3 py-2 flex items-center justify-between text-sm font-semibold text-obd-primary hover:bg-obd-dim/30 transition-colors"
+          >
+            <span>Download Tiles</span>
+            <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>
+              {downloadOpen ? 'expand_less' : 'expand_more'}
+            </span>
+          </button>
+
+          {downloadOpen && (
+            <div className="bg-obd-surface rounded-lg p-3 space-y-2">
+              {!tilesMounted && (
+                <p className="text-xs text-yellow-400">No USB with tiles/ folder found. Insert a USB drive with a tiles/ folder.</p>
+              )}
+              {/* Max zoom */}
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-obd-dim">Max Zoom:</label>
+                <select
+                  value={downloadMaxZoom}
+                  onChange={(e) => setDownloadMaxZoom(Number(e.target.value))}
+                  disabled={downloading}
+                  className="bg-obd-dark text-white text-sm rounded px-2 py-1 border border-obd-dim"
+                >
+                  {[10, 11, 12, 13, 14, 15].map((z) => (
+                    <option key={z} value={z}>z{z}</option>
+                  ))}
+                </select>
+                <span className="text-xs text-obd-dim flex-1">Visible area will be downloaded</span>
+              </div>
+              {/* Buttons */}
+              <div className="flex gap-2">
+                {!downloading ? (
+                  <button
+                    onClick={handleDownload}
+                    disabled={!tilesMounted}
+                    className="flex-1 px-3 py-2 bg-blue-700 text-white rounded text-sm hover:bg-blue-600 disabled:opacity-50 transition-colors flex items-center justify-center gap-1"
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>download</span>
+                    Download
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleDownloadCancel}
+                    className="flex-1 px-3 py-2 bg-red-700 text-white rounded text-sm hover:bg-red-600 transition-colors flex items-center justify-center gap-1"
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>cancel</span>
+                    Cancel
+                  </button>
+                )}
+              </div>
+              {/* Progress */}
+              {downloadProgress && (
+                <p className="text-xs text-gray-300 font-mono break-all">{downloadProgress}</p>
+              )}
+              {downloadError && (
+                <p className="text-xs text-red-400">{downloadError}</p>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

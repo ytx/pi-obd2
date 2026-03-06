@@ -54,6 +54,7 @@ function MapPanel() {
   const setHeadingUp = useMapStore((s) => s.setHeadingUp);
   const activeDestinationId = useMapStore((s) => s.activeDestinationId);
   const destinations = useMapStore((s) => s.destinations);
+  const setActiveDestination = useMapStore((s) => s.setActiveDestination);
   const activeDest = destinations.find((d) => d.id === activeDestinationId) ?? null;
 
   // GPS values
@@ -65,16 +66,19 @@ function MapPanel() {
   // Determine map theme from illumination (ON = night = dark)
   const mapTheme: MapTheme = illuminationActive ? 'dark' : 'light';
 
-  // Discover available PMTiles files
+  // Auto-mount tiles USB, then discover available PMTiles files
   useEffect(() => {
     let cancelled = false;
-    window.obd2API.mapListTiles().then((files) => {
+    window.obd2API.tilesAutoMount().then(() => {
       if (cancelled) return;
-      if (files.length > 0) {
-        setTilesUrl(`local-tiles://${files[0].path}`);
-      } else {
-        setError('No .pmtiles files found');
-      }
+      window.obd2API.mapListTiles().then((files) => {
+        if (cancelled) return;
+        if (files.length > 0) {
+          setTilesUrl(`local-tiles://${files[0].path}`);
+        } else {
+          setError('No .pmtiles files found');
+        }
+      });
     });
     return () => { cancelled = true; };
   }, []);
@@ -292,6 +296,17 @@ function MapPanel() {
     setHeadingUp(!headingUp);
   }, [headingUp, setHeadingUp]);
 
+  const handleCycleDestination = useCallback(() => {
+    if (destinations.length === 0) return;
+    if (!activeDestinationId) {
+      setActiveDestination(destinations[0].id);
+    } else {
+      const idx = destinations.findIndex((d) => d.id === activeDestinationId);
+      const nextIdx = (idx + 1) % (destinations.length + 1);
+      setActiveDestination(nextIdx < destinations.length ? destinations[nextIdx].id : null);
+    }
+  }, [destinations, activeDestinationId, setActiveDestination]);
+
   if (error) {
     return (
       <div className="h-full w-full bg-obd-surface/30 rounded-lg flex items-center justify-center text-gray-500 text-sm">
@@ -303,7 +318,26 @@ function MapPanel() {
   return (
     <div className="relative h-full w-full rounded-lg overflow-hidden">
       <div ref={containerRef} className="h-full w-full" />
-      {/* Control buttons */}
+      {/* Left bottom: destination selector + distance */}
+      <div className="absolute bottom-2 left-2 flex flex-col items-start gap-1 z-10">
+        {destinations.length > 0 && (
+          <MapButton
+            icon={activeDest?.icon || 'pin_drop'}
+            title={activeDest ? activeDest.name : 'Select destination'}
+            onClick={handleCycleDestination}
+            active={!!activeDest}
+          />
+        )}
+        {activeDest && (
+          <div className="bg-black/60 text-white text-sm px-2 py-1 rounded">
+            <div className="truncate max-w-[200px]">{activeDest.name}</div>
+            {lat !== undefined && lon !== undefined && (
+              <div className="font-mono">{formatDistance(haversineDistance(lat, lon, activeDest.lat, activeDest.lon))}</div>
+            )}
+          </div>
+        )}
+      </div>
+      {/* Right bottom: control buttons */}
       <div className="absolute bottom-2 right-2 flex flex-col gap-1 z-10">
         <MapButton icon="near_me" title="Center on current location" onClick={handleCenterMe} />
         {activeDest && (
@@ -321,6 +355,22 @@ function MapPanel() {
   );
 }
 
+function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000;
+  const toRad = (d: number) => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatDistance(meters: number): string {
+  if (meters < 1000) return `${Math.round(meters / 10) * 10} m`;
+  const km = meters / 1000;
+  if (km < 100) return `${km.toPrecision(2)} km`;
+  return `${Math.round(km)} km`;
+}
+
 function MapButton({ icon, title, onClick, active, iconRotation }: {
   icon: string;
   title: string;
@@ -332,12 +382,12 @@ function MapButton({ icon, title, onClick, active, iconRotation }: {
     <button
       onClick={onClick}
       title={title}
-      className={`w-8 h-8 rounded flex items-center justify-center shadow-md
+      className={`w-12 h-12 rounded flex items-center justify-center shadow-md
         ${active ? 'bg-blue-600 text-white' : 'bg-black/60 text-gray-200 hover:bg-black/80'}`}
     >
       <span
         className="material-symbols-outlined"
-        style={{ fontSize: '20px', transform: iconRotation !== undefined ? `rotate(${iconRotation}deg)` : undefined }}
+        style={{ fontSize: '30px', transform: iconRotation !== undefined ? `rotate(${iconRotation}deg)` : undefined }}
       >{icon}</span>
     </button>
   );
