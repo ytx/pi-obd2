@@ -93,6 +93,14 @@ declare global {
       onGPSData: (callback: (values: OBDValue[]) => void) => () => void;
       onGPSConnectionChange: (callback: (state: string) => void) => () => void;
 
+      // Terminal
+      terminalSpawn: (cols: number, rows: number) => Promise<void>;
+      terminalWrite: (data: string) => Promise<void>;
+      terminalResize: (cols: number, rows: number) => Promise<void>;
+      terminalKill: () => Promise<void>;
+      onTerminalOutput: (callback: (data: string) => void) => () => void;
+      onTerminalExit: (callback: (code: number) => void) => () => void;
+
       // Logs
       getLogs: () => Promise<Array<{ timestamp: string; level: string; tag: string; message: string }>>;
       saveLogsUsb: () => Promise<{ success: boolean; filePath?: string; error?: string }>;

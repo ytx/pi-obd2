@@ -17,6 +17,7 @@ import { BluetoothManager } from './bluetooth/bluetooth-manager';
 import { WiFiManager } from './network/wifi-manager';
 import { GpioManager } from './gpio/gpio-manager';
 import { logger } from './logger';
+import { TerminalManager } from './terminal/terminal-manager';
 
 const USB_MOUNT_POINT = '/mnt/obd2-usb';
 
@@ -31,6 +32,9 @@ let isStubMode = true; // Default to stub for development
 let usbResetCount = 0; // Consecutive USB resets without a successful connection
 const USB_RESET_MAX = 3; // Max consecutive resets before giving up
 let usbResetInProgress = false; // Prevent overlapping resets
+
+// Terminal
+let terminalManager: TerminalManager | null = null;
 
 // GPS source
 let gpsSource: GpsSource | null = null;
@@ -788,6 +792,33 @@ function registerIpcHandlers(): void {
   ipcMain.handle('gpio-set-usb-reset-pin', (_event, pin: number | null) => {
     lastUsbResetPin = pin;
   });
+
+  // --- Terminal IPC ---
+  ipcMain.handle('terminal-spawn', (_event, cols: number, rows: number) => {
+    if (terminalManager) {
+      terminalManager.dispose();
+    }
+    terminalManager = new TerminalManager();
+    terminalManager.onOutput((data) => {
+      mainWindow?.webContents.send('terminal-output', data);
+    });
+    terminalManager.onExit((code) => {
+      mainWindow?.webContents.send('terminal-exit', code);
+    });
+    terminalManager.spawn(cols, rows);
+  });
+
+  ipcMain.handle('terminal-write', (_event, data: string) => {
+    terminalManager?.write(data);
+  });
+
+  ipcMain.handle('terminal-resize', (_event, cols: number, rows: number) => {
+    terminalManager?.resize(cols, rows);
+  });
+
+  ipcMain.handle('terminal-kill', () => {
+    terminalManager?.kill();
+  });
 }
 
 /** Auto-mount USB if a device is present (for theme/config restoration after reboot) */
@@ -856,6 +887,10 @@ function cleanupAndQuit(): void {
   if (gpsSource) {
     gpsSource.dispose();
     gpsSource = null;
+  }
+  if (terminalManager) {
+    terminalManager.dispose();
+    terminalManager = null;
   }
   gpioManager.dispose();
 }

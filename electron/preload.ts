@@ -143,6 +143,22 @@ const obd2API = {
     return () => { ipcRenderer.removeListener('gps-connection-change', listener); };
   },
 
+  // Terminal
+  terminalSpawn: (cols: number, rows: number): Promise<void> => ipcRenderer.invoke('terminal-spawn', cols, rows),
+  terminalWrite: (data: string): Promise<void> => ipcRenderer.invoke('terminal-write', data),
+  terminalResize: (cols: number, rows: number): Promise<void> => ipcRenderer.invoke('terminal-resize', cols, rows),
+  terminalKill: (): Promise<void> => ipcRenderer.invoke('terminal-kill'),
+  onTerminalOutput: (callback: (data: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: string) => callback(data);
+    ipcRenderer.on('terminal-output', listener);
+    return () => { ipcRenderer.removeListener('terminal-output', listener); };
+  },
+  onTerminalExit: (callback: (code: number) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, code: number) => callback(code);
+    ipcRenderer.on('terminal-exit', listener);
+    return () => { ipcRenderer.removeListener('terminal-exit', listener); };
+  },
+
   // Logs
   getLogs: (): Promise<Array<{ timestamp: string; level: string; tag: string; message: string }>> =>
     ipcRenderer.invoke('get-logs'),

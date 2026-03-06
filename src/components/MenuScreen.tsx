@@ -25,7 +25,8 @@ const tiles: (TileConfig | null)[] = [
   { label: 'Theme', screen: 'theme-editor', color: 'bg-amber-700' },
   // Row 4
   { label: 'System', screen: 'system-settings', color: 'bg-teal-700' },
-  null, null,
+  null,
+  { label: 'Terminal', screen: 'terminal', color: 'bg-zinc-700' },
   { label: 'Dev', screen: 'dev-settings', color: 'bg-gray-700' },
   { label: 'About', screen: 'about', color: 'bg-slate-700' },
 ];
