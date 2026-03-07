@@ -236,7 +236,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle('save-config', () => {
     try {
       logger.info('config', 'Saving config...');
-      execSync('sudo /boot/firmware/config/save.sh --all');
+      execSync('sudo /boot/firmware/config/save.sh --all', { stdio: 'pipe' });
       logger.info('config', 'Config saved');
       return { success: true };
     } catch (e) {

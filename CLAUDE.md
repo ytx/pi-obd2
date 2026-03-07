@@ -433,7 +433,8 @@ themes/<theme-name>/
 - ヘディングアップモード: GPS heading (`GPS_HDG`) で bearing を更新（`jumpTo` で即座反映）、マップ中心は固定（ユーザーがパンした位置を維持）
 - ノースアップモード: bearing = 0 固定
 - north アイコンボタン: ヘディングアップ時に `-hdg` で回転して北方向を指す
-- コントロールボタン（右下オーバーレイ、w-12 h-12 の大きめボタン）:
+- 左上オーバーレイ: FPS カウンター（MapLibre `render` イベントを 1 秒間カウント、アイドル時は低値、操作中に実描画性能を表示）
+- 右下コントロールボタン（w-12 h-12 の大きめボタン）:
   - `near_me` — 現在地を中央に移動（インタラクション一時停止を即解除）
   - `explore` — 現在地+目的地を含む範囲にフィット（目的地選択時のみ表示）
   - `north` — ヘディングアップ/ノースアップ切替（アクティブ時は青ボタン）
@@ -501,9 +502,11 @@ USB Drive/
 - エディタ専用フォント `ThemeEditorFont` でダッシュボードの `TorqueThemeFont` と共存
 - PID 選択時は PID 別プロパティを表示、未設定なら Global 値をプレースホルダー表示
 - 未保存変更の dirty 検出 + テーマ切替・画面離脱時の確認ダイアログ
+- USB テーマ複製: デフォルト名から `usb:` プレフィックスを除去、複製後の ID に `usb:` を付加（`:` がフォルダ名に入ると mkdir 失敗）
 
 **System 画面:**
 - USB Memory（検出・マウント/アンマウント・設定エクスポート/インポート）
+- Save Config: `execSync` に `stdio: 'pipe'` 指定（Electron 環境で `EFAULT: bad address` エラー防止）
 - System Actions（Save Config・Save Logs（USB マウント時）・Reboot・Shutdown）
 
 **WiFi 画面:**

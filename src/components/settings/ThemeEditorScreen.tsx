@@ -472,12 +472,14 @@ function ThemeEditorScreen() {
 
   const handleDuplicate = async () => {
     if (!selectedThemeId || !api) return;
-    const name = await showPromptAsync('Duplicate name:', selectedThemeId + '-copy');
+    const baseName = selectedThemeId.startsWith('usb:') ? selectedThemeId.slice(4) : selectedThemeId;
+    const name = await showPromptAsync('Duplicate name:', baseName + '-copy');
     if (!name) return;
     const result = await api.themeDuplicate(selectedThemeId, name);
     if (result.success) {
       await loadThemes();
-      setSelectedThemeId(name);
+      const newId = selectedThemeId.startsWith('usb:') ? `usb:${name}` : name;
+      setSelectedThemeId(newId);
     }
   };
 

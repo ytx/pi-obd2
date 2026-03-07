@@ -44,6 +44,7 @@ function MapPanel() {
   const [tilesUrl, setTilesUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mapReady, setMapReady] = useState(false);
+  const [fps, setFps] = useState(0);
   const themeRef = useRef<MapTheme>('dark');
   const userInteractingRef = useRef(false);
   const interactTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -190,6 +191,23 @@ function MapPanel() {
     return () => ro.disconnect();
   }, [tilesUrl]);
 
+  // FPS counter
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    let frameCount = 0;
+    const onRender = () => { frameCount++; };
+    map.on('render', onRender);
+    const interval = setInterval(() => {
+      setFps(frameCount);
+      frameCount = 0;
+    }, 1000);
+    return () => {
+      map.off('render', onRender);
+      clearInterval(interval);
+    };
+  }, [tilesUrl]);
+
   // Update current location marker (tilesUrl dep ensures it runs after map init)
   useEffect(() => {
     const map = mapRef.current;
@@ -318,6 +336,10 @@ function MapPanel() {
   return (
     <div className="relative h-full w-full rounded-lg overflow-hidden">
       <div ref={containerRef} className="h-full w-full" />
+      {/* FPS */}
+      <div className="absolute top-2 left-2 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded font-mono z-10">
+        {fps} FPS
+      </div>
       {/* Left bottom: destination selector + distance */}
       <div className="absolute bottom-2 left-2 flex flex-col items-start gap-1 z-10">
         {destinations.length > 0 && (
