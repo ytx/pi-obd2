@@ -36,6 +36,27 @@ function createIconElement(iconName: string, color: string, size: number): HTMLD
   return el;
 }
 
+/** Jump to follow GPS position. Heading-up places GPS at 3/4 from top.
+ *  Sets programmaticMoveRef to prevent interaction handler from firing. */
+function jumpToFollow(
+  map: maplibregl.Map, lon: number, lat: number, isHeadingUp: boolean,
+  hdg: number | undefined, programmaticMoveRef: React.MutableRefObject<boolean>,
+) {
+  programmaticMoveRef.current = true;
+  if (isHeadingUp) {
+    const bearing = hdg !== undefined ? hdg : 0;
+    map.jumpTo({ center: [lon, lat], bearing });
+    const h = map.getContainer().clientHeight;
+    const w = map.getContainer().clientWidth;
+    const offsetCenter = map.unproject(new maplibregl.Point(w / 2, h * 0.25));
+    map.jumpTo({ center: offsetCenter, bearing });
+  } else {
+    map.jumpTo({ center: [lon, lat], bearing: 0 });
+  }
+  // Reset after current microtask (events fire synchronously from jumpTo)
+  Promise.resolve().then(() => { programmaticMoveRef.current = false; });
+}
+
 function MapPanel() {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -46,8 +67,8 @@ function MapPanel() {
   const [mapReady, setMapReady] = useState(false);
   const [fps, setFps] = useState(0);
   const themeRef = useRef<MapTheme>('dark');
-  const userInteractingRef = useRef(false);
-  const interactTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const followingRef = useRef(true); // true = auto-follow GPS, false = user took control
+  const programmaticMoveRef = useRef(false); // true during our own jumpTo calls
 
   // Store state
   const illuminationActive = useGpioStore((s) => s.illuminationActive);
@@ -90,6 +111,7 @@ function MapPanel() {
 
     ensurePmtilesProtocol();
     themeRef.current = mapTheme;
+    followingRef.current = true;
     const map = new maplibregl.Map({
       container: containerRef.current,
       zoom: 12,
@@ -101,25 +123,16 @@ function MapPanel() {
     });
     mapRef.current = map;
 
-    // Pause auto-follow during user interaction
+    // Pause auto-follow on user interaction (stays paused until "near me")
     const onInteractStart = () => {
-      userInteractingRef.current = true;
-      if (interactTimeoutRef.current) clearTimeout(interactTimeoutRef.current);
-    };
-    const onInteractEnd = () => {
-      if (interactTimeoutRef.current) clearTimeout(interactTimeoutRef.current);
-      interactTimeoutRef.current = setTimeout(() => {
-        userInteractingRef.current = false;
-      }, 3000);
+      if (programmaticMoveRef.current) return; // ignore events from our own jumpTo
+      followingRef.current = false;
     };
     for (const ev of ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart'] as const) {
       map.on(ev, onInteractStart);
     }
-    for (const ev of ['dragend', 'zoomend', 'rotateend', 'pitchend'] as const) {
-      map.on(ev, onInteractEnd);
-    }
 
-    // Add route line source/layer after style loads (faster than 'load' which waits for all tiles)
+    // Add route line source/layer after style loads
     map.once('style.load', () => {
       map.addSource('route-line', {
         type: 'geojson',
@@ -140,7 +153,6 @@ function MapPanel() {
     });
 
     return () => {
-      if (interactTimeoutRef.current) clearTimeout(interactTimeoutRef.current);
       currentMarkerRef.current?.remove();
       currentMarkerRef.current = null;
       destMarkerRef.current?.remove();
@@ -159,7 +171,6 @@ function MapPanel() {
     themeRef.current = mapTheme;
     setMapReady(false);
     map.setStyle(makeStyle(tilesUrl, mapTheme));
-    // Re-add route line source/layer after style change
     map.once('style.load', () => {
       if (!map.getSource('route-line')) {
         map.addSource('route-line', {
@@ -208,7 +219,7 @@ function MapPanel() {
     };
   }, [tilesUrl]);
 
-  // Update current location marker (tilesUrl dep ensures it runs after map init)
+  // Update current location marker (always, regardless of follow state)
   useEffect(() => {
     const map = mapRef.current;
     if (!map || lat === undefined || lon === undefined) return;
@@ -223,29 +234,14 @@ function MapPanel() {
     }
   }, [lat, lon, tilesUrl]);
 
-  // Initial center on GPS position (once, when map loads)
+  // GPS follow: scroll + rotate when following
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || lat === undefined || lon === undefined) return;
-    if (!map.loaded()) {
-      const onLoad = () => map.jumpTo({ center: [lon, lat] });
-      map.once('load', onLoad);
-      return () => { map.off('load', onLoad); };
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tilesUrl]);
+    if (!map || !mapReady || lat === undefined || lon === undefined) return;
+    if (!followingRef.current) return;
 
-  // Update bearing only (heading-up rotates around current map center, not GPS position)
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !map.loaded() || userInteractingRef.current) return;
-
-    if (headingUp && hdg !== undefined) {
-      map.jumpTo({ bearing: -hdg });
-    } else if (!headingUp) {
-      map.jumpTo({ bearing: 0 });
-    }
-  }, [hdg, headingUp, tilesUrl]);
+    jumpToFollow(map, lon, lat, headingUp, hdg, programmaticMoveRef);
+  }, [lat, lon, hdg, headingUp, mapReady]);
 
   // Update destination marker
   useEffect(() => {
@@ -269,7 +265,6 @@ function MapPanel() {
     }
   }, [activeDest, tilesUrl]);
 
-  // Route line between current location and destination
   // Route line between current location and destination
   useEffect(() => {
     const map = mapRef.current;
@@ -295,11 +290,9 @@ function MapPanel() {
   const handleCenterMe = useCallback(() => {
     const map = mapRef.current;
     if (!map || lat === undefined || lon === undefined) return;
-    // Cancel interaction pause and resume auto-follow
-    userInteractingRef.current = false;
-    if (interactTimeoutRef.current) clearTimeout(interactTimeoutRef.current);
-    map.jumpTo({ center: [lon, lat] });
-  }, [lat, lon]);
+    followingRef.current = true;
+    jumpToFollow(map, lon, lat, headingUp, hdg, programmaticMoveRef);
+  }, [lat, lon, hdg, headingUp]);
 
   const handleFitBounds = useCallback(() => {
     const map = mapRef.current;
@@ -370,7 +363,7 @@ function MapPanel() {
           title={headingUp ? 'Heading up' : 'North up'}
           onClick={handleToggleHeading}
           active={headingUp}
-          iconRotation={headingUp && hdg !== undefined ? -hdg : undefined}
+          iconRotation={headingUp && hdg !== undefined ? hdg : undefined}
         />
       </div>
     </div>

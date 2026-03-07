@@ -347,6 +347,11 @@ function registerIpcHandlers(): void {
     if (dataSource instanceof StubSource) {
       (dataSource as StubSource).setProfile(name);
     }
+    // Sync GPS stub profile: idle→stationary, city→driving, highway→highway
+    if (gpsSource instanceof StubGpsSource) {
+      const gpsProfile = name === 'idle' ? 'stationary' : name === 'city' ? 'driving' : 'highway';
+      (gpsSource as StubGpsSource).setProfile(gpsProfile);
+    }
   });
 
   ipcMain.handle('stub-set-pid-config', (_event, pid: string, config: StubPidConfig) => {
