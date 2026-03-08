@@ -81,6 +81,7 @@ function MapPanel() {
   const themeRef = useRef<MapTheme>('dark');
   const followingRef = useRef(true); // true = auto-follow GPS, false = user took control
   const programmaticMoveRef = useRef(false); // true during our own jumpTo calls
+  const userTouchingRef = useRef(false); // true while user is touching/clicking the map
 
   // Store state
   const illuminationActive = useGpioStore((s) => s.illuminationActive);
@@ -135,9 +136,20 @@ function MapPanel() {
     });
     mapRef.current = map;
 
-    // Pause auto-follow on user interaction (stays paused until "near me")
+    // Track user touch/mouse to suppress jumpTo during active interaction
+    const canvas = map.getCanvasContainer();
+    const onPointerDown = () => { userTouchingRef.current = true; };
+    const onPointerUp = () => {
+      userTouchingRef.current = false;
+      // If user moved the map, stop following
+      followingRef.current = false;
+    };
+    canvas.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointerup', onPointerUp);
+
+    // Also pause on MapLibre interaction events (pinch zoom etc.)
     const onInteractStart = () => {
-      if (programmaticMoveRef.current) return; // ignore events from our own jumpTo
+      if (programmaticMoveRef.current) return;
       followingRef.current = false;
     };
     for (const ev of ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart'] as const) {
@@ -165,6 +177,8 @@ function MapPanel() {
     });
 
     return () => {
+      canvas.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointerup', onPointerUp);
       currentMarkerRef.current?.remove();
       currentMarkerRef.current = null;
       destMarkerRef.current?.remove();
@@ -255,11 +269,11 @@ function MapPanel() {
     currentMarkerRef.current.setRotation(rotation);
   }, [hdg, headingUp]);
 
-  // GPS follow: scroll + rotate when following
+  // GPS follow: scroll + rotate when following (skip while user is touching)
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || lat === undefined || lon === undefined) return;
-    if (!followingRef.current) return;
+    if (!followingRef.current || userTouchingRef.current) return;
 
     jumpToFollow(map, lon, lat, headingUp, hdg, programmaticMoveRef);
   }, [lat, lon, hdg, headingUp, mapReady]);
@@ -332,7 +346,7 @@ function MapPanel() {
     const map = mapRef.current;
     if (!map) return;
     programmaticMoveRef.current = true;
-    map.zoomIn();
+    map.zoomTo(map.getZoom() + 1, { duration: 0 });
     Promise.resolve().then(() => { programmaticMoveRef.current = false; });
   }, []);
 
@@ -340,7 +354,7 @@ function MapPanel() {
     const map = mapRef.current;
     if (!map) return;
     programmaticMoveRef.current = true;
-    map.zoomOut();
+    map.zoomTo(map.getZoom() - 1, { duration: 0 });
     Promise.resolve().then(() => { programmaticMoveRef.current = false; });
   }, []);
 
