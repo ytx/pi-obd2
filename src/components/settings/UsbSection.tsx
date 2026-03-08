@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { UsbDevice } from '@/types';
 import { useBoardStore } from '@/stores/useBoardStore';
 import { useThemeStore } from '@/stores/useThemeStore';
@@ -12,6 +12,24 @@ function UsbSection() {
   const [mountedDevice, setMountedDevice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  // Auto-detect USB devices on mount
+  useEffect(() => {
+    let cancelled = false;
+    window.obd2API.detectUsb().then((devs) => {
+      if (cancelled) return;
+      setDevices(devs);
+      const alreadyMounted = devs.find((d: UsbDevice) => d.mountpoint?.includes('obd2-usb'));
+      if (alreadyMounted) {
+        setMounted(true);
+        setMountedDevice(alreadyMounted.device);
+      }
+      if (devs.length > 0) {
+        setSelectedDevice(devs[0].device);
+      }
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   const loadDevices = useCallback(async () => {
     const devs = await window.obd2API.detectUsb();

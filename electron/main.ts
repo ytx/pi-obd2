@@ -18,6 +18,7 @@ import { WiFiManager } from './network/wifi-manager';
 import { GpioManager } from './gpio/gpio-manager';
 import { logger } from './logger';
 import { TerminalManager } from './terminal/terminal-manager';
+import { CaptureManager } from './capture/capture-manager';
 
 // Register custom protocol for serving local PMTiles with Range request support
 protocol.registerSchemesAsPrivileged([
@@ -50,6 +51,9 @@ let tilesDownloadProcess: ChildProcess | null = null;
 // GPS source
 let gpsSource: GpsSource | null = null;
 let isGpsStubMode = false;
+
+// Capture
+const captureManager = new CaptureManager();
 
 // CPU usage tracking
 let prevCpuIdle = 0;
@@ -92,6 +96,7 @@ function getDataSource(): DataSource {
     // Forward data and connection events to renderer
     dataSource.onData((values) => {
       mainWindow?.webContents.send('obd-data', values);
+      captureManager.write('obd', values);
     });
     let previousState: string = 'disconnected';
     dataSource.onConnectionChange((state) => {
@@ -121,6 +126,7 @@ function getGpsSource(): GpsSource {
     }
     gpsSource.onData((values) => {
       mainWindow?.webContents.send('gps-data', values);
+      captureManager.write('gps', values);
     });
     gpsSource.onConnectionChange((state) => {
       mainWindow?.webContents.send('gps-connection-change', state);
@@ -964,6 +970,35 @@ function registerIpcHandlers(): void {
     }
     return { success: false, error: 'No download in progress' };
   });
+
+  // --- Capture IPC ---
+  ipcMain.handle('capture-start', () => {
+    if (!usbMounted) {
+      return { success: false, error: 'USB not mounted' };
+    }
+    const captureDir = path.join(USB_MOUNT_POINT, 'capture');
+    try {
+      if (!fs.existsSync(captureDir)) {
+        fs.mkdirSync(captureDir, { recursive: true });
+      }
+    } catch (e) {
+      return { success: false, error: `Failed to create capture dir: ${e}` };
+    }
+    const now = new Date();
+    const stamp = now.toISOString().replace(/[T:]/g, '-').replace(/\..+/, '');
+    const filePath = path.join(captureDir, `${stamp}.jsonl`);
+    captureManager.start(filePath);
+    return { success: true, filePath };
+  });
+
+  ipcMain.handle('capture-stop', () => {
+    captureManager.stop();
+    return { success: true };
+  });
+
+  ipcMain.handle('capture-status', () => {
+    return captureManager.getStatus();
+  });
 }
 
 function findPmtilesCli(): string | null {
@@ -1172,6 +1207,7 @@ function cleanupAndQuit(): void {
     terminalManager.dispose();
     terminalManager = null;
   }
+  captureManager.dispose();
   gpioManager.dispose();
 }
 

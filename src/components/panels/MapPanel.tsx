@@ -261,11 +261,17 @@ function MapPanel() {
   }, [lat, lon, tilesUrl]);
 
   // Rotate direction marker to match heading
+  // viewport-aligned: rotation=0 means pointing up on screen
+  // Need to account for current map bearing so arrow always points in travel direction
   useEffect(() => {
     if (!currentMarkerRef.current) return;
-    // In heading-up mode the map rotates, so marker rotation = 0 (always points up = forward)
-    // In north-up mode, rotate marker by heading so it points in travel direction
-    const rotation = headingUp ? 0 : (hdg ?? 0);
+    const map = mapRef.current;
+    const mapBearing = map ? map.getBearing() : 0;
+    // rotation relative to screen: hdg - mapBearing
+    // When following in heading-up: mapBearing ≈ hdg → rotation ≈ 0 (points up)
+    // When not following: mapBearing is fixed → rotation shows actual heading relative to map
+    // In north-up: mapBearing = 0 → rotation = hdg
+    const rotation = (hdg ?? 0) - mapBearing;
     currentMarkerRef.current.setRotation(rotation);
   }, [hdg, headingUp]);
 
@@ -342,21 +348,22 @@ function MapPanel() {
     setHeadingUp(!headingUp);
   }, [headingUp, setHeadingUp]);
 
-  const handleZoomIn = useCallback(() => {
+  const zoomAround = useCallback((delta: number) => {
     const map = mapRef.current;
     if (!map) return;
     programmaticMoveRef.current = true;
-    map.zoomTo(map.getZoom() + 1, { duration: 0 });
+    // Zoom around current GPS position if available, otherwise map center
+    if (lat !== undefined && lon !== undefined) {
+      const pt = map.project([lon, lat]);
+      map.zoomTo(map.getZoom() + delta, { around: map.unproject(pt), duration: 0 });
+    } else {
+      map.zoomTo(map.getZoom() + delta, { duration: 0 });
+    }
     Promise.resolve().then(() => { programmaticMoveRef.current = false; });
-  }, []);
+  }, [lat, lon]);
 
-  const handleZoomOut = useCallback(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    programmaticMoveRef.current = true;
-    map.zoomTo(map.getZoom() - 1, { duration: 0 });
-    Promise.resolve().then(() => { programmaticMoveRef.current = false; });
-  }, []);
+  const handleZoomIn = useCallback(() => zoomAround(1), [zoomAround]);
+  const handleZoomOut = useCallback(() => zoomAround(-1), [zoomAround]);
 
   const handleCycleDestination = useCallback(() => {
     if (destinations.length === 0) return;

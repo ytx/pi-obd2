@@ -7,16 +7,25 @@ function SystemSettingsScreen() {
   const [usbMounted, setUsbMounted] = useState(false);
   const [logSaveStatus, setLogSaveStatus] = useState<string | null>(null);
   const [configSaveStatus, setConfigSaveStatus] = useState<string | null>(null);
+  const [capturing, setCapturing] = useState(false);
+  const [captureCount, setCaptureCount] = useState(0);
+  const [captureFile, setCaptureFile] = useState<string | null>(null);
+  const [captureMessage, setCaptureMessage] = useState<string | null>(null);
 
-  // Poll USB mount status
+  // Poll USB mount status + capture status
   useEffect(() => {
     const poll = () => {
       if (window.obd2API) {
         window.obd2API.isUsbMounted().then(setUsbMounted);
+        window.obd2API.captureStatus().then((s) => {
+          setCapturing(s.capturing);
+          setCaptureCount(s.count);
+          setCaptureFile(s.filePath);
+        });
       }
     };
     poll();
-    const id = setInterval(poll, 5000);
+    const id = setInterval(poll, 2000);
     return () => clearInterval(id);
   }, []);
 
@@ -51,6 +60,28 @@ function SystemSettingsScreen() {
     setTimeout(() => setLogSaveStatus(null), 3000);
   };
 
+  const handleCaptureStart = async () => {
+    setCaptureMessage(null);
+    const result = await window.obd2API.captureStart();
+    if (result.success) {
+      setCapturing(true);
+      setCaptureFile(result.filePath ?? null);
+      setCaptureCount(0);
+    } else {
+      setCaptureMessage(`Error: ${result.error}`);
+      setTimeout(() => setCaptureMessage(null), 5000);
+    }
+  };
+
+  const handleCaptureStop = async () => {
+    await window.obd2API.captureStop();
+    setCapturing(false);
+    setCaptureMessage(`Saved ${captureCount} records`);
+    setCaptureCount(0);
+    setCaptureFile(null);
+    setTimeout(() => setCaptureMessage(null), 5000);
+  };
+
   return (
     <div className="h-full flex flex-col bg-obd-dark p-6">
       <div className="flex items-center justify-between mb-6">
@@ -67,6 +98,44 @@ function SystemSettingsScreen() {
       <div className="flex-1 overflow-auto space-y-4">
         {/* USB Memory */}
         <UsbSection />
+
+        {/* Capture */}
+        {usbMounted && (
+          <div className="bg-obd-surface rounded-lg p-4">
+            <h2 className="text-lg font-semibold text-obd-primary mb-3">Data Capture</h2>
+            <div className="flex items-center gap-4">
+              {capturing ? (
+                <>
+                  <button
+                    onClick={handleCaptureStop}
+                    className="px-4 py-2 bg-red-700 text-white rounded-lg hover:bg-red-600 transition-colors"
+                  >
+                    <span className="material-symbols-outlined align-middle mr-1" style={{ fontSize: '18px' }}>stop_circle</span>
+                    Capture Stop
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
+                    <span className="text-sm text-white font-mono">{captureCount.toLocaleString()} records</span>
+                  </div>
+                </>
+              ) : (
+                <button
+                  onClick={handleCaptureStart}
+                  className="px-4 py-2 bg-green-700 text-white rounded-lg hover:bg-green-600 transition-colors"
+                >
+                  <span className="material-symbols-outlined align-middle mr-1" style={{ fontSize: '18px' }}>fiber_manual_record</span>
+                  Capture Start
+                </button>
+              )}
+            </div>
+            {captureFile && (
+              <p className="text-xs text-obd-dim mt-2 truncate">{captureFile}</p>
+            )}
+            {captureMessage && (
+              <p className="text-sm text-obd-dim mt-2">{captureMessage}</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* System Actions */}

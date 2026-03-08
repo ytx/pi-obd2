@@ -176,6 +176,14 @@ const obd2API = {
     return () => { ipcRenderer.removeListener('tiles-download-progress', listener); };
   },
 
+  // Capture
+  captureStart: (): Promise<{ success: boolean; filePath?: string; error?: string }> =>
+    ipcRenderer.invoke('capture-start'),
+  captureStop: (): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke('capture-stop'),
+  captureStatus: (): Promise<{ capturing: boolean; filePath: string | null; count: number }> =>
+    ipcRenderer.invoke('capture-status'),
+
   // Logs
   getLogs: (): Promise<Array<{ timestamp: string; level: string; tag: string; message: string }>> =>
     ipcRenderer.invoke('get-logs'),

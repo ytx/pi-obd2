@@ -109,6 +109,11 @@ declare global {
       tilesDownloadCancel: () => Promise<{ success: boolean; error?: string }>;
       onTilesDownloadProgress: (callback: (message: string) => void) => () => void;
 
+      // Capture
+      captureStart: () => Promise<{ success: boolean; filePath?: string; error?: string }>;
+      captureStop: () => Promise<{ success: boolean }>;
+      captureStatus: () => Promise<{ capturing: boolean; filePath: string | null; count: number }>;
+
       // Logs
       getLogs: () => Promise<Array<{ timestamp: string; level: string; tag: string; message: string }>>;
       saveLogsUsb: () => Promise<{ success: boolean; filePath?: string; error?: string }>;
