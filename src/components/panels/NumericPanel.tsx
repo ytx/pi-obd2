@@ -17,7 +17,10 @@ function NumericPanel({ pid, label, unit, config }: NumericPanelProps) {
   const displayBackgroundUrl = useThemeStore((s) => s.displayBackgroundUrl);
   const fontLoaded = useThemeStore((s) => s.fontLoaded);
 
-  const activeConfig = currentThemeId ? themeNumericConfig : config;
+  const baseConfig = currentThemeId ? themeNumericConfig : config;
+  const activeConfig = config.decimals !== baseConfig.decimals
+    ? { ...baseConfig, decimals: config.decimals }
+    : baseConfig;
   const fontFamily = fontLoaded ? 'TorqueThemeFont, sans-serif' : undefined;
 
   return (

@@ -6,6 +6,8 @@ import { ensurePmtilesProtocol } from '@/lib/pmtiles-protocol';
 import { useOBDStore } from '@/stores/useOBDStore';
 import { useGpioStore } from '@/stores/useGpioStore';
 import { useMapStore } from '@/stores/useMapStore';
+import compassImg from '@/assets/compass.png';
+import directionImg from '@/assets/direction.png';
 
 type MapTheme = 'light' | 'dark';
 
@@ -23,6 +25,16 @@ function makeStyle(tilesUrl: string, theme: MapTheme): maplibregl.StyleSpecifica
     },
     layers: layers('protomaps', namedTheme(theme), { lang: 'ja' }),
   };
+}
+
+function createImageElement(src: string, size: number): HTMLDivElement {
+  const el = document.createElement('div');
+  el.style.cssText = `width:${size}px;height:${size}px;pointer-events:none;`;
+  const img = document.createElement('img');
+  img.src = src;
+  img.style.cssText = 'width:100%;height:100%;';
+  el.appendChild(img);
+  return el;
 }
 
 function createIconElement(iconName: string, color: string, size: number): HTMLDivElement {
@@ -219,20 +231,29 @@ function MapPanel() {
     };
   }, [tilesUrl]);
 
-  // Update current location marker (always, regardless of follow state)
+  // Update current location marker with direction.png
   useEffect(() => {
     const map = mapRef.current;
     if (!map || lat === undefined || lon === undefined) return;
 
     if (!currentMarkerRef.current) {
-      const el = createIconElement('my_location', '#4488ff', 28);
-      currentMarkerRef.current = new maplibregl.Marker({ element: el, anchor: 'center' })
+      const el = createImageElement(directionImg, 40);
+      currentMarkerRef.current = new maplibregl.Marker({ element: el, anchor: 'center', rotationAlignment: 'viewport' })
         .setLngLat([lon, lat])
         .addTo(map);
     } else {
       currentMarkerRef.current.setLngLat([lon, lat]);
     }
   }, [lat, lon, tilesUrl]);
+
+  // Rotate direction marker to match heading
+  useEffect(() => {
+    if (!currentMarkerRef.current) return;
+    // In heading-up mode the map rotates, so marker rotation = 0 (always points up = forward)
+    // In north-up mode, rotate marker by heading so it points in travel direction
+    const rotation = headingUp ? 0 : (hdg ?? 0);
+    currentMarkerRef.current.setRotation(rotation);
+  }, [hdg, headingUp]);
 
   // GPS follow: scroll + rotate when following
   useEffect(() => {
@@ -307,6 +328,22 @@ function MapPanel() {
     setHeadingUp(!headingUp);
   }, [headingUp, setHeadingUp]);
 
+  const handleZoomIn = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    programmaticMoveRef.current = true;
+    map.zoomIn();
+    Promise.resolve().then(() => { programmaticMoveRef.current = false; });
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    programmaticMoveRef.current = true;
+    map.zoomOut();
+    Promise.resolve().then(() => { programmaticMoveRef.current = false; });
+  }, []);
+
   const handleCycleDestination = useCallback(() => {
     if (destinations.length === 0) return;
     if (!activeDestinationId) {
@@ -317,6 +354,9 @@ function MapPanel() {
       setActiveDestination(nextIdx < destinations.length ? destinations[nextIdx].id : null);
     }
   }, [destinations, activeDestinationId, setActiveDestination]);
+
+  // Compass rotation: in heading-up mode, rotate compass to show north direction
+  const compassRotation = headingUp && hdg !== undefined ? -hdg : 0;
 
   if (error) {
     return (
@@ -332,6 +372,26 @@ function MapPanel() {
       {/* FPS */}
       <div className="absolute top-2 left-2 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded font-mono z-10">
         {fps} FPS
+      </div>
+      {/* Top center: compass button (heading up / north up toggle) */}
+      <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10">
+        <button
+          onClick={handleToggleHeading}
+          title={headingUp ? 'Heading up' : 'North up'}
+          className="w-14 h-14 rounded-full bg-black/50 flex items-center justify-center shadow-md"
+        >
+          <img
+            src={compassImg}
+            alt="compass"
+            className="w-10 h-10 transition-transform duration-200"
+            style={{ transform: `rotate(${compassRotation}deg)` }}
+          />
+        </button>
+      </div>
+      {/* Top right: zoom buttons */}
+      <div className="absolute top-2 right-2 flex flex-col gap-1 z-10">
+        <MapButton icon="zoom_in" title="Zoom in" onClick={handleZoomIn} />
+        <MapButton icon="zoom_out" title="Zoom out" onClick={handleZoomOut} />
       </div>
       {/* Left bottom: destination selector + distance */}
       <div className="absolute bottom-2 left-2 flex flex-col items-start gap-1 z-10">
@@ -358,13 +418,6 @@ function MapPanel() {
         {activeDest && (
           <MapButton icon="explore" title="Fit current + destination" onClick={handleFitBounds} />
         )}
-        <MapButton
-          icon="north"
-          title={headingUp ? 'Heading up' : 'North up'}
-          onClick={handleToggleHeading}
-          active={headingUp}
-          iconRotation={headingUp && hdg !== undefined ? hdg : undefined}
-        />
       </div>
     </div>
   );
@@ -386,12 +439,11 @@ function formatDistance(meters: number): string {
   return `${Math.round(km)} km`;
 }
 
-function MapButton({ icon, title, onClick, active, iconRotation }: {
+function MapButton({ icon, title, onClick, active }: {
   icon: string;
   title: string;
   onClick: () => void;
   active?: boolean;
-  iconRotation?: number;
 }) {
   return (
     <button
@@ -402,7 +454,7 @@ function MapButton({ icon, title, onClick, active, iconRotation }: {
     >
       <span
         className="material-symbols-outlined"
-        style={{ fontSize: '30px', transform: iconRotation !== undefined ? `rotate(${iconRotation}deg)` : undefined }}
+        style={{ fontSize: '30px' }}
       >{icon}</span>
     </button>
   );

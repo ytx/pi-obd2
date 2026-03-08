@@ -10,3 +10,4 @@ electron/git-version.ts
 /scripts/output/
 *.pmtiles
 pmtiles
+/work/
