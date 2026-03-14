@@ -22,6 +22,7 @@ export class SerialGpsSource implements GpsSource {
   private readTimer: ReturnType<typeof setInterval> | null = null;
   private lineBuffer = '';
   private generation = 0;
+  private _nmeaLogCounter = 0;
 
   async connect(devicePath?: string): Promise<void> {
     if (this.state === 'connected' || this.state === 'connecting') {
@@ -203,6 +204,12 @@ export class SerialGpsSource implements GpsSource {
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed.startsWith('$')) continue;
+
+      // Log raw NMEA periodically (every ~10s at 1Hz)
+      if (!this._nmeaLogCounter) this._nmeaLogCounter = 0;
+      if (++this._nmeaLogCounter % 10 === 1) {
+        logger.info('GPS', `NMEA: ${trimmed.substring(0, 80)}`);
+      }
 
       const rmc = parseRmc(trimmed);
       if (rmc) {

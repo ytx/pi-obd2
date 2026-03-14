@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; worker-src 'self' blob:; child-src 'self' blob:; connect-src 'self' local-tiles:;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file:; font-src 'self' data: file:; worker-src 'self' blob:; child-src 'self' blob:; connect-src 'self' local-tiles: file:;">
     <style>
       @font-face {
         font-family: 'Material Symbols Outlined';
         font-style: normal;
         font-weight: 100 700;
-        src: url('/material-symbols-outlined.woff2') format('woff2');
+        src: url('./material-symbols-outlined.woff2') format('woff2');
       }
       .material-symbols-outlined {
         font-family: 'Material Symbols Outlined';

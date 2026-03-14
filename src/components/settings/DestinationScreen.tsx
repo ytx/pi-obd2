@@ -15,8 +15,8 @@ type MapTheme = 'light' | 'dark';
 function makeStyle(tilesUrl: string, theme: MapTheme): maplibregl.StyleSpecification {
   return {
     version: 8,
-    glyphs: '/fonts/{fontstack}/{range}.pbf',
-    sprite: `/sprites/${theme}`,
+    glyphs: 'local-tiles://assets/fonts/{fontstack}/{range}.pbf',
+    sprite: `local-tiles://assets/sprites/${theme}`,
     sources: {
       protomaps: {
         type: 'vector',

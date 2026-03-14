@@ -1128,10 +1128,32 @@ function autoMountUsb(): void {
 
 app.whenReady().then(() => {
   // Register local-tiles protocol handler (serves local files with Range request support for PMTiles)
+  // Resolve asset paths: local-tiles://assets/fonts/... → dist/fonts/...
+  const distDir = path.join(__dirname, '../dist');
+
   protocol.handle('local-tiles', (request) => {
     try {
-      const filePath = decodeURIComponent(new URL(request.url).pathname);
+      const url = new URL(request.url);
+      const host = url.host; // 'assets' for bundled assets, empty for PMTiles
+      let filePath: string;
+      if (host === 'assets') {
+        // Serve bundled assets from dist directory
+        const assetPath = decodeURIComponent(url.pathname);
+        filePath = path.join(distDir, assetPath);
+        logger.info('local-tiles', `asset request: ${request.url} → ${filePath} (exists: ${fs.existsSync(filePath)})`);
+        // Security: prevent path traversal
+        if (!filePath.startsWith(distDir)) return new Response(null, { status: 403 });
+      } else {
+        filePath = decodeURIComponent(url.pathname);
+      }
       const stat = fs.statSync(filePath);
+      const ext = path.extname(filePath).toLowerCase();
+      const mimeTypes: Record<string, string> = {
+        '.pbf': 'application/x-protobuf',
+        '.json': 'application/json',
+        '.png': 'image/png',
+      };
+      const contentType = mimeTypes[ext] || 'application/octet-stream';
       const rangeHeader = request.headers.get('Range');
       if (rangeHeader) {
         const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
@@ -1148,7 +1170,7 @@ app.whenReady().then(() => {
         return new Response(buffer, {
           status: 206,
           headers: {
-            'Content-Type': 'application/octet-stream',
+            'Content-Type': contentType,
             'Content-Range': `bytes ${start}-${clampedEnd}/${stat.size}`,
             'Content-Length': String(length),
             'Accept-Ranges': 'bytes',
@@ -1159,7 +1181,7 @@ app.whenReady().then(() => {
       if (stat.size > 64 * 1024 * 1024) {
         return new Response(null, {
           headers: {
-            'Content-Type': 'application/octet-stream',
+            'Content-Type': contentType,
             'Content-Length': String(stat.size),
             'Accept-Ranges': 'bytes',
           },
@@ -1168,7 +1190,7 @@ app.whenReady().then(() => {
       const data = fs.readFileSync(filePath);
       return new Response(data, {
         headers: {
-          'Content-Type': 'application/octet-stream',
+          'Content-Type': contentType,
           'Content-Length': String(stat.size),
           'Accept-Ranges': 'bytes',
         },
