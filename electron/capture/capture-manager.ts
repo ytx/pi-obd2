@@ -27,7 +27,7 @@ export class CaptureManager {
     logger.info('capture', `Started: ${filePath}`);
   }
 
-  write(src: 'obd' | 'gps', values: OBDValue[]): void {
+  write(src: 'obd' | 'gps' | 'tpms', values: OBDValue[]): void {
     if (!this.stream) return;
     const line = JSON.stringify({
       t: Date.now(),

@@ -7,6 +7,7 @@ import NumericPanel from './NumericPanel';
 import MeterPanel from './MeterPanel';
 import GraphPanel from './GraphPanel';
 import MapPanel from './MapPanel';
+import TpmsPanel from './TpmsPanel';
 
 interface PanelSlotProps {
   slot: BoardSlot | null;
@@ -58,6 +59,8 @@ function PanelSlot({ slot }: PanelSlotProps) {
     }
     case 'map':
       return <MapPanel />;
+    case 'tpms':
+      return <TpmsPanel />;
     default:
       return <div className="bg-obd-surface/30 rounded-lg" />;
   }

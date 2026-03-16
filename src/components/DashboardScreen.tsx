@@ -5,6 +5,7 @@ import { useBoardStore } from '@/stores/useBoardStore';
 import { useThemeStore } from '@/stores/useThemeStore';
 import { useGpioStore } from '@/stores/useGpioStore';
 import { useGpsStore } from '@/stores/useGpsStore';
+import { useTpmsStore } from '@/stores/useTpmsStore';
 import { OBDConnectionState, ThemeData, GpioChangeEvent } from '@/types';
 import { waitForHydration } from '@/stores/hydration';
 import BoardContainer from '@/components/boards/BoardContainer';
@@ -28,6 +29,14 @@ function DashboardScreen() {
     setGpsConnectionState,
     setGpsStubMode,
   } = useGpsStore();
+  const {
+    tpmsConnectionState,
+    isTpmsStubMode,
+    sensorAssignments,
+    alertThreshold,
+    setTpmsConnectionState,
+    setTpmsStubMode,
+  } = useTpmsStore();
   const screenPadding = useBoardStore((s) => s.screenPadding);
 
   // WiFi & USB state for indicators
@@ -63,6 +72,14 @@ function DashboardScreen() {
       setGpsConnectionState(s as OBDConnectionState),
     );
 
+    // TPMS listeners
+    window.obd2API.tpmsIsStubMode().then(setTpmsStubMode);
+    window.obd2API.tpmsGetState().then((s) => setTpmsConnectionState(s as OBDConnectionState));
+    const removeTpmsData = window.obd2API.onTPMSData(updateValues);
+    const removeTpmsConn = window.obd2API.onTPMSConnectionChange((s) =>
+      setTpmsConnectionState(s as OBDConnectionState),
+    );
+
     // Wait for OBDStore hydration then auto-connect (only if disconnected)
     // cancelled flag prevents duplicate connect from React StrictMode double-mount
     waitForHydration(useOBDStore).then(async () => {
@@ -95,14 +112,40 @@ function DashboardScreen() {
       }
     });
 
+    // TPMS auto-connect after hydration (if any sensors are assigned)
+    waitForHydration(useTpmsStore).then(async () => {
+      if (cancelled) return;
+      const { sensorAssignments } = useTpmsStore.getState();
+      const hasAssignments = Object.values(sensorAssignments).some((v) => v !== null);
+      if (!hasAssignments) return;
+      const currentTpmsState = await window.obd2API.tpmsGetState();
+      if (cancelled) return;
+      if (currentTpmsState === 'disconnected' || currentTpmsState === 'error') {
+        // Restore assignments to main process
+        const ts = useTpmsStore.getState().sensorAssignments;
+        window.obd2API.tpmsConnect().then(() => {
+          // After connect, set saved assignments
+          for (const [pos, sensorId] of Object.entries(ts)) {
+            if (sensorId) {
+              window.obd2API.tpmsAssignSensor(sensorId, pos);
+            }
+          }
+        }).catch((e) =>
+          console.warn('TPMS auto-connect failed:', e),
+        );
+      }
+    });
+
     return () => {
       cancelled = true;
       removeData();
       removeConn();
       removeGpsData();
       removeGpsConn();
+      removeTpmsData();
+      removeTpmsConn();
     };
-  }, [setAvailablePids, setStubMode, setConnectionState, updateValues, setProfiles, setAvailableThemes, setGpsConnectionState, setGpsStubMode]);
+  }, [setAvailablePids, setStubMode, setConnectionState, updateValues, setProfiles, setAvailableThemes, setGpsConnectionState, setGpsStubMode, setTpmsConnectionState, setTpmsStubMode]);
 
   // Poll WiFi state, listen for USB state changes
   useEffect(() => {
@@ -212,8 +255,16 @@ function DashboardScreen() {
 
   const obdColor = getIconColor(connectionState, isStubMode);
   const gpsColor = getIconColor(gpsConnectionState, isGpsStubMode);
+  const tpmsColor = getIconColor(tpmsConnectionState, isTpmsStubMode);
 
-  const anyConnected = connectionState === 'connected' || gpsConnectionState === 'connected';
+  // Check if any TPMS tire is below alert threshold
+  const currentValues = useOBDStore((s) => s.currentValues);
+  const tpmsAlert = tpmsConnectionState === 'connected' && (['FL', 'FR', 'RL', 'RR'] as const).some((pos) => {
+    const p = currentValues[`TPMS_${pos}_P`]?.value;
+    return p !== undefined && sensorAssignments[pos] !== null && p < alertThreshold;
+  });
+
+  const anyConnected = connectionState === 'connected' || gpsConnectionState === 'connected' || tpmsConnectionState === 'connected';
 
   return (
     <div className="h-full relative bg-obd-dark">
@@ -237,6 +288,7 @@ function DashboardScreen() {
         <span className={`material-symbols-outlined text-base ${wifiConnected ? 'text-green-400' : 'text-red-500'}`}>wifi</span>
         <span className={`material-symbols-outlined text-base ${gpsColor}`}>satellite_alt</span>
         <span className={`material-symbols-outlined text-base ${obdColor}`}>directions_car</span>
+        <span className={`material-symbols-outlined text-base ${tpmsAlert ? 'text-red-500 animate-pulse' : tpmsColor}`}>tire_repair</span>
       </div>
 
       {/* Tap zone - top-left: Menu */}

@@ -6,6 +6,7 @@ import { useGpsStore } from '@/stores/useGpsStore';
 import { useGpioStore } from '@/stores/useGpioStore';
 import { usePidConfigStore } from '@/stores/usePidConfigStore';
 import { useMapStore } from '@/stores/useMapStore';
+import { useTpmsStore } from '@/stores/useTpmsStore';
 
 const DEBOUNCE_MS = 5000;
 
@@ -36,6 +37,7 @@ export function useConfigAutoSave(): void {
         const gpio = useGpioStore.getState();
         const pid = usePidConfigStore.getState();
         const map = useMapStore.getState();
+        const tpms = useTpmsStore.getState();
 
         const config = {
           version: 4,
@@ -59,6 +61,11 @@ export function useConfigAutoSave(): void {
           destinations: map.destinations,
           activeDestinationId: map.activeDestinationId,
           headingUp: map.headingUp,
+          tpms: {
+            sensorAssignments: tpms.sensorAssignments,
+            pressureUnit: tpms.pressureUnit,
+            alertThreshold: tpms.alertThreshold,
+          },
         };
 
         window.obd2API.configSave(config).catch(() => {
@@ -76,6 +83,7 @@ export function useConfigAutoSave(): void {
       useGpioStore.subscribe(scheduleAutoSave),
       usePidConfigStore.subscribe(scheduleAutoSave),
       useMapStore.subscribe(scheduleAutoSave),
+      useTpmsStore.subscribe(scheduleAutoSave),
     ];
 
     return () => {

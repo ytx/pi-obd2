@@ -8,6 +8,10 @@ import { ELM327Source } from './obd/elm327-source';
 import { DataSource } from './obd/data-source';
 import { getAllPidInfos } from './obd/pids';
 import { getAllGpsPidInfos } from './gps/gps-pids';
+import { getAllTpmsPidInfos } from './tpms/tpms-pids';
+import { TpmsSource, TirePosition } from './tpms/tpms-source';
+import { BleTpmsSource } from './tpms/ble-tpms-source';
+import { StubTpmsSource } from './tpms/stub-tpms-source';
 import { GpsSource } from './gps/gps-source';
 import { SerialGpsSource } from './gps/serial-gps-source';
 import { StubGpsSource } from './gps/stub-gps-source';
@@ -48,6 +52,10 @@ let tilesDownloadProcess: ChildProcess | null = null;
 // GPS source
 let gpsSource: GpsSource | null = null;
 let isGpsStubMode = false;
+
+// TPMS source
+let tpmsSource: TpmsSource | null = null;
+let isTpmsStubMode = false;
 
 // Capture
 const captureManager = new CaptureManager();
@@ -130,6 +138,27 @@ function getGpsSource(): GpsSource {
     });
   }
   return gpsSource;
+}
+
+function getTpmsSource(): TpmsSource {
+  if (!tpmsSource) {
+    if (isTpmsStubMode) {
+      tpmsSource = new StubTpmsSource();
+    } else {
+      tpmsSource = new BleTpmsSource();
+    }
+    tpmsSource.onData((values) => {
+      mainWindow?.webContents.send('tpms-data', values);
+      captureManager.write('tpms', values);
+    });
+    tpmsSource.onConnectionChange((state) => {
+      mainWindow?.webContents.send('tpms-connection-change', state);
+    });
+    tpmsSource.onSensorDiscovered((sensor) => {
+      mainWindow?.webContents.send('tpms-sensor-discovered', sensor);
+    });
+  }
+  return tpmsSource;
 }
 
 // USB reset pin and device path — set by renderer via IPC at startup
@@ -303,7 +332,7 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('obd-get-available-pids', () => {
-    return [...getAllPidInfos(), ...getAllGpsPidInfos()];
+    return [...getAllPidInfos(), ...getAllGpsPidInfos(), ...getAllTpmsPidInfos()];
   });
 
   ipcMain.handle('obd-set-polling-pids', (_event, pids: string[]) => {
@@ -354,6 +383,11 @@ function registerIpcHandlers(): void {
     if (gpsSource instanceof StubGpsSource) {
       const gpsProfile = name === 'idle' ? 'stationary' : name === 'city' ? 'driving' : 'highway';
       (gpsSource as StubGpsSource).setProfile(gpsProfile);
+    }
+    // Sync TPMS stub profile
+    if (tpmsSource instanceof StubTpmsSource) {
+      const tpmsProfile = name === 'idle' ? 'stationary' : name === 'city' ? 'driving' : 'highway';
+      (tpmsSource as StubTpmsSource).setProfile(tpmsProfile);
     }
   });
 
@@ -503,6 +537,76 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('gps-is-stub-mode', () => {
     return isGpsStubMode;
+  });
+
+  // --- TPMS IPC ---
+  ipcMain.handle('tpms-connect', async () => {
+    logger.info('tpms', 'Connect requested');
+    if (tpmsSource && tpmsSource.getState() !== 'disconnected') {
+      await tpmsSource.disconnect();
+    }
+    if (!isTpmsStubMode || !(tpmsSource instanceof BleTpmsSource)) {
+      if (!isTpmsStubMode && tpmsSource) {
+        tpmsSource.dispose();
+        tpmsSource = null;
+      }
+    }
+    isTpmsStubMode = false;
+    if (tpmsSource) {
+      tpmsSource.dispose();
+      tpmsSource = null;
+    }
+    const ts = getTpmsSource();
+    ts.connect().then(() => {
+      logger.info('tpms', `Connected (mode=${isTpmsStubMode ? 'stub' : 'ble'})`);
+    }).catch((err) => {
+      logger.error('tpms', `Connect failed: ${err}`);
+    });
+  });
+
+  ipcMain.handle('tpms-connect-stub', () => {
+    logger.info('tpms', 'Stub connect requested');
+    if (tpmsSource) {
+      tpmsSource.dispose();
+      tpmsSource = null;
+    }
+    isTpmsStubMode = true;
+    const ts = getTpmsSource();
+    ts.connect().then(() => {
+      logger.info('tpms', 'Connected (mode=stub)');
+    }).catch((err) => {
+      logger.error('tpms', `Stub connect failed: ${err}`);
+    });
+  });
+
+  ipcMain.handle('tpms-disconnect', async () => {
+    if (tpmsSource) {
+      await tpmsSource.disconnect();
+    }
+  });
+
+  ipcMain.handle('tpms-get-state', () => {
+    return tpmsSource?.getState() ?? 'disconnected';
+  });
+
+  ipcMain.handle('tpms-is-stub-mode', () => {
+    return isTpmsStubMode;
+  });
+
+  ipcMain.handle('tpms-get-sensors', () => {
+    return tpmsSource?.getSensors() ?? [];
+  });
+
+  ipcMain.handle('tpms-assign-sensor', (_event, sensorId: string, position: string) => {
+    tpmsSource?.assignSensor(sensorId, position as TirePosition);
+  });
+
+  ipcMain.handle('tpms-unassign-sensor', (_event, position: string) => {
+    tpmsSource?.unassignSensor(position as TirePosition);
+  });
+
+  ipcMain.handle('tpms-get-assignments', () => {
+    return tpmsSource?.getAssignments() ?? { FL: null, FR: null, RL: null, RR: null };
   });
 
   // --- WiFi IPC ---
@@ -1045,6 +1149,10 @@ function cleanupAndQuit(): void {
   if (gpsSource) {
     gpsSource.dispose();
     gpsSource = null;
+  }
+  if (tpmsSource) {
+    tpmsSource.dispose();
+    tpmsSource = null;
   }
   if (terminalManager) {
     terminalManager.dispose();

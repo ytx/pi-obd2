@@ -7,6 +7,7 @@ import { useGpsStore } from '@/stores/useGpsStore';
 import { useGpioStore } from '@/stores/useGpioStore';
 import { usePidConfigStore } from '@/stores/usePidConfigStore';
 import { useMapStore } from '@/stores/useMapStore';
+import { useTpmsStore } from '@/stores/useTpmsStore';
 import { waitForHydration } from '@/stores/hydration';
 import { useConfigAutoSave } from '@/hooks/useConfigAutoSave';
 import DashboardScreen from '@/components/DashboardScreen';
@@ -27,6 +28,7 @@ import TerminalScreen from '@/components/settings/TerminalScreen';
 import WiFiScreen from '@/components/settings/WiFiScreen';
 import GpioScreen from '@/components/settings/GpioScreen';
 import DestinationScreen from '@/components/settings/DestinationScreen';
+import TpmsScreen from '@/components/settings/TpmsScreen';
 
 function App() {
   const { currentScreen, setHostname } = useAppStore();
@@ -53,6 +55,7 @@ function App() {
       waitForHydration(useGpioStore),
       waitForHydration(usePidConfigStore),
       waitForHydration(useMapStore),
+      waitForHydration(useTpmsStore),
     ]).then(async () => {
       // Try loading USB config (overrides localStorage values)
       const config = await window.obd2API.configLoad();
@@ -99,6 +102,16 @@ function App() {
             headingUp: (c.headingUp as boolean) ?? useMapStore.getState().headingUp,
           });
         }
+        if (c.tpms && typeof c.tpms === 'object') {
+          const t = c.tpms as Record<string, unknown>;
+          const ts = useTpmsStore.getState();
+          if (t.sensorAssignments) ts.setSensorAssignment('FL', (t.sensorAssignments as Record<string, string | null>).FL ?? null);
+          if (t.sensorAssignments) ts.setSensorAssignment('FR', (t.sensorAssignments as Record<string, string | null>).FR ?? null);
+          if (t.sensorAssignments) ts.setSensorAssignment('RL', (t.sensorAssignments as Record<string, string | null>).RL ?? null);
+          if (t.sensorAssignments) ts.setSensorAssignment('RR', (t.sensorAssignments as Record<string, string | null>).RR ?? null);
+          if (t.pressureUnit) ts.setPressureUnit(t.pressureUnit as 'kPa' | 'psi' | 'bar');
+          if (t.alertThreshold !== undefined) ts.setAlertThreshold(t.alertThreshold as number);
+        }
         // Theme from USB config
         const themeId = c.currentThemeId as string | null;
         if (themeId) {
@@ -140,6 +153,7 @@ function App() {
       {currentScreen === 'wifi' && <WiFiScreen />}
       {currentScreen === 'gpio' && <GpioScreen />}
       {currentScreen === 'destination' && <DestinationScreen />}
+      {currentScreen === 'tpms' && <TpmsScreen />}
     </div>
   );
 }

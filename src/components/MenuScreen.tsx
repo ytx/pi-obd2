@@ -13,7 +13,8 @@ const tiles: (TileConfig | null)[] = [
   { label: 'Values', icon: 'list', screen: 'values', color: 'bg-emerald-700' },
   { label: 'DTCs', icon: 'car_crash', screen: 'dtc', color: 'bg-red-700' },
   { label: 'Destination', icon: 'pin_drop', screen: 'destination', color: 'bg-rose-700' },
-  null, null,
+  { label: 'TPMS', icon: 'tire_repair', screen: 'tpms', color: 'bg-amber-700' },
+  null,
   // Row 2
   { label: 'OBD2', icon: 'browse_activity', screen: 'obd2', color: 'bg-green-700' },
   { label: 'GPS', icon: 'satellite_alt', screen: 'gps', color: 'bg-cyan-700' },

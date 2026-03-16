@@ -1,4 +1,4 @@
-import { MeterConfig, GraphConfig, NumericConfig, MapConfig, PanelDef, Layout, LayoutSlot, Board } from '@/types';
+import { MeterConfig, GraphConfig, NumericConfig, MapConfig, TpmsConfig, PanelDef, Layout, LayoutSlot, Board } from '@/types';
 
 export const DEFAULT_METER_CONFIG: MeterConfig = {
   meterType: 'needle',
@@ -53,6 +53,8 @@ export const DEFAULT_NUMERIC_CONFIG: NumericConfig = {
 
 export const DEFAULT_MAP_CONFIG: MapConfig = {};
 
+export const DEFAULT_TPMS_CONFIG: TpmsConfig = {};
+
 // Display templates (kind + config, no PID)
 export const DEFAULT_PANEL_DEFS: PanelDef[] = [
   { id: 'meter', kind: 'meter', config: { ...DEFAULT_METER_CONFIG } },
@@ -61,6 +63,7 @@ export const DEFAULT_PANEL_DEFS: PanelDef[] = [
   { id: 'numeric', kind: 'numeric', config: { ...DEFAULT_NUMERIC_CONFIG } },
   { id: 'numeric-int', kind: 'numeric', config: { ...DEFAULT_NUMERIC_CONFIG, decimals: 0 } },
   { id: 'map', kind: 'map', config: { ...DEFAULT_MAP_CONFIG } },
+  { id: 'tpms', kind: 'tpms', config: { ...DEFAULT_TPMS_CONFIG } },
 ];
 
 // 64x36 grid layouts (16:9)

@@ -1,4 +1,4 @@
-export type Screen = 'dashboard' | 'menu' | 'system-settings' | 'display-settings' | 'board-settings' | 'layout-editor' | 'dev-settings' | 'theme-editor' | 'bluetooth' | 'obd2' | 'dtc' | 'gps' | 'values' | 'about' | 'terminal' | 'wifi' | 'gpio' | 'destination';
+export type Screen = 'dashboard' | 'menu' | 'system-settings' | 'display-settings' | 'board-settings' | 'layout-editor' | 'dev-settings' | 'theme-editor' | 'bluetooth' | 'obd2' | 'dtc' | 'gps' | 'tpms' | 'values' | 'about' | 'terminal' | 'wifi' | 'gpio' | 'destination';
 
 export interface SystemStats {
   cpuUsage: number;
@@ -47,7 +47,7 @@ export interface StubConfig {
 }
 
 // Panel & Board types (Phase 3)
-export type PanelKind = 'numeric' | 'meter' | 'graph' | 'map';
+export type PanelKind = 'numeric' | 'meter' | 'graph' | 'map' | 'tpms';
 export type MeterType = 'needle' | 'arc';
 
 export interface MeterConfig {
@@ -97,10 +97,14 @@ export interface MapConfig {
   // Reserved for future map settings
 }
 
+export interface TpmsConfig {
+  // Reserved for future TPMS panel settings
+}
+
 export interface PanelDef {
   id: string;
   kind: PanelKind;
-  config: MeterConfig | GraphConfig | NumericConfig | MapConfig;
+  config: MeterConfig | GraphConfig | NumericConfig | MapConfig | TpmsConfig;
 }
 
 export interface BoardSlot {

@@ -4,7 +4,7 @@
 - Values(list, bg-emerald-700)
 - DTCs(car_crash, bg-red-700)
 - Destination(pin_drop, bg-rose-700)
-- (empty)
+- TPMS(tire_repair, bg-amber-700)
 - (empty)
 
 - OBD2(browse_activity, bg-green-700)

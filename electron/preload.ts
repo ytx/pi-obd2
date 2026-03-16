@@ -146,6 +146,36 @@ const obd2API = {
     return () => { ipcRenderer.removeListener('gps-connection-change', listener); };
   },
 
+  // TPMS
+  tpmsConnect: (): Promise<void> => ipcRenderer.invoke('tpms-connect'),
+  tpmsConnectStub: (): Promise<void> => ipcRenderer.invoke('tpms-connect-stub'),
+  tpmsDisconnect: (): Promise<void> => ipcRenderer.invoke('tpms-disconnect'),
+  tpmsGetState: (): Promise<string> => ipcRenderer.invoke('tpms-get-state'),
+  tpmsIsStubMode: (): Promise<boolean> => ipcRenderer.invoke('tpms-is-stub-mode'),
+  tpmsGetSensors: (): Promise<Array<{ id: string; pressure: number; temperature: number; battery: number; rssi: number; lastSeen: number }>> =>
+    ipcRenderer.invoke('tpms-get-sensors'),
+  tpmsAssignSensor: (sensorId: string, position: string): Promise<void> =>
+    ipcRenderer.invoke('tpms-assign-sensor', sensorId, position),
+  tpmsUnassignSensor: (position: string): Promise<void> =>
+    ipcRenderer.invoke('tpms-unassign-sensor', position),
+  tpmsGetAssignments: (): Promise<Record<string, string | null>> =>
+    ipcRenderer.invoke('tpms-get-assignments'),
+  onTPMSData: (callback: (values: Array<{ pid: string; value: number; timestamp: number }>) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, values: Array<{ pid: string; value: number; timestamp: number }>) => callback(values);
+    ipcRenderer.on('tpms-data', listener);
+    return () => { ipcRenderer.removeListener('tpms-data', listener); };
+  },
+  onTPMSConnectionChange: (callback: (state: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: string) => callback(state);
+    ipcRenderer.on('tpms-connection-change', listener);
+    return () => { ipcRenderer.removeListener('tpms-connection-change', listener); };
+  },
+  onTPMSSensorDiscovered: (callback: (sensor: { id: string; pressure: number; temperature: number; battery: number; rssi: number; lastSeen: number }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, sensor: { id: string; pressure: number; temperature: number; battery: number; rssi: number; lastSeen: number }) => callback(sensor);
+    ipcRenderer.on('tpms-sensor-discovered', listener);
+    return () => { ipcRenderer.removeListener('tpms-sensor-discovered', listener); };
+  },
+
   // Terminal
   terminalSpawn: (cols: number, rows: number): Promise<void> => ipcRenderer.invoke('terminal-spawn', cols, rows),
   terminalWrite: (data: string): Promise<void> => ipcRenderer.invoke('terminal-write', data),

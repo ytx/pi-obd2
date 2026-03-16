@@ -94,6 +94,20 @@ declare global {
       onGPSData: (callback: (values: OBDValue[]) => void) => () => void;
       onGPSConnectionChange: (callback: (state: string) => void) => () => void;
 
+      // TPMS
+      tpmsConnect: () => Promise<void>;
+      tpmsConnectStub: () => Promise<void>;
+      tpmsDisconnect: () => Promise<void>;
+      tpmsGetState: () => Promise<string>;
+      tpmsIsStubMode: () => Promise<boolean>;
+      tpmsGetSensors: () => Promise<Array<{ id: string; pressure: number; temperature: number; battery: number; rssi: number; lastSeen: number }>>;
+      tpmsAssignSensor: (sensorId: string, position: string) => Promise<void>;
+      tpmsUnassignSensor: (position: string) => Promise<void>;
+      tpmsGetAssignments: () => Promise<Record<string, string | null>>;
+      onTPMSData: (callback: (values: OBDValue[]) => void) => () => void;
+      onTPMSConnectionChange: (callback: (state: string) => void) => () => void;
+      onTPMSSensorDiscovered: (callback: (sensor: { id: string; pressure: number; temperature: number; battery: number; rssi: number; lastSeen: number }) => void) => () => void;
+
       // Terminal
       terminalSpawn: (cols: number, rows: number) => Promise<void>;
       terminalWrite: (data: string) => Promise<void>;
