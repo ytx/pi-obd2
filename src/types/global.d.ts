@@ -1,4 +1,4 @@
-import { SystemStats, OBDPidInfo, OBDValue, ThemeInfo, ThemeData, BTDevice, WiFiNetwork, UsbDevice, UsbResult, GpioChangeEvent, SerialDevice } from './index';
+import { SystemStats, OBDPidInfo, OBDValue, ThemeInfo, ThemeData, BTDevice, WiFiNetwork, UsbState, GpioChangeEvent, SerialDevice } from './index';
 
 declare global {
   const __GIT_COMMIT__: string;
@@ -36,11 +36,12 @@ declare global {
       stubGetConfig: () => Promise<Record<string, unknown> | null>;
 
       // USB
-      detectUsb: () => Promise<UsbDevice[]>;
-      mountUsb: (device: string) => Promise<UsbResult>;
-      unmountUsb: () => Promise<UsbResult>;
-      usbExportConfig: (configJson: string) => Promise<UsbResult>;
-      usbImportConfig: () => Promise<{ success: boolean; data?: string; error?: string }>;
+      usbGetState: () => Promise<{ state: UsbState; device: string | null }>;
+      onUsbStateChange: (callback: (state: UsbState) => void) => () => void;
+
+      // Config (USB)
+      configLoad: () => Promise<Record<string, unknown> | null>;
+      configSave: (data: Record<string, unknown>) => Promise<{ success: boolean; error?: string }>;
 
       // Themes
       themeList: () => Promise<ThemeInfo[]>;
@@ -103,8 +104,6 @@ declare global {
 
       // Map
       mapListTiles: () => Promise<Array<{ path: string; name: string; size: number }>>;
-      tilesGetStatus: () => Promise<{ mounted: boolean; device: string | null; mountpoint: string | null }>;
-      tilesAutoMount: () => Promise<{ success: boolean; device?: string; error?: string }>;
       tilesDownload: (bbox: [number, number, number, number], maxzoom: number) => Promise<{ success: boolean; error?: string }>;
       tilesDownloadCancel: () => Promise<{ success: boolean; error?: string }>;
       onTilesDownloadProgress: (callback: (message: string) => void) => () => void;
@@ -118,7 +117,6 @@ declare global {
       getLogs: () => Promise<Array<{ timestamp: string; level: string; tag: string; message: string }>>;
       saveLogsUsb: () => Promise<{ success: boolean; filePath?: string; error?: string }>;
       logSettings: (settings: Record<string, unknown>) => Promise<void>;
-      isUsbMounted: () => Promise<boolean>;
     };
   }
 }

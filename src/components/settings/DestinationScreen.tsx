@@ -80,12 +80,12 @@ function DestinationScreen() {
   const [downloadMaxZoom, setDownloadMaxZoom] = useState(14);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
-  // Discover tiles + auto-mount tiles USB
+  // Discover tiles (USB already mounted at startup)
   useEffect(() => {
     let cancelled = false;
-    window.obd2API.tilesAutoMount().then((res) => {
+    window.obd2API.usbGetState().then((s) => {
       if (cancelled) return;
-      setTilesMounted(res.success);
+      setTilesMounted(s.state !== 'unmounted');
     });
     window.obd2API.mapListTiles().then((files) => {
       if (cancelled) return;

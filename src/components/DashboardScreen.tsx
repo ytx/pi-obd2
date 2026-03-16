@@ -32,7 +32,7 @@ function DashboardScreen() {
 
   // WiFi & USB state for indicators
   const [wifiConnected, setWifiConnected] = useState(false);
-  const [usbMounted, setUsbMounted] = useState(false);
+  const [usbState, setUsbState] = useState<string>('unmounted');
 
   // GPIO saved state refs (for restoring on OFF)
   const savedThemeIdRef = useRef<string | null | undefined>(undefined);
@@ -104,16 +104,19 @@ function DashboardScreen() {
     };
   }, [setAvailablePids, setStubMode, setConnectionState, updateValues, setProfiles, setAvailableThemes, setGpsConnectionState, setGpsStubMode]);
 
-  // Poll WiFi and USB state for indicators
+  // Poll WiFi state, listen for USB state changes
   useEffect(() => {
     if (!window.obd2API) return;
+    // WiFi: poll
     const poll = () => {
       window.obd2API.wifiGetCurrent().then((ssid) => setWifiConnected(ssid !== null)).catch(() => {});
-      window.obd2API.isUsbMounted().then(setUsbMounted).catch(() => {});
     };
     poll();
     const id = setInterval(poll, 5000);
-    return () => clearInterval(id);
+    // USB: get initial + listen
+    window.obd2API.usbGetState().then((s) => setUsbState(s.state)).catch(() => {});
+    const cleanupUsb = window.obd2API.onUsbStateChange((state) => setUsbState(state));
+    return () => { clearInterval(id); cleanupUsb(); };
   }, []);
 
   // GPIO change listener — illumination (theme switch) and reverse (board switch)
@@ -230,7 +233,7 @@ function DashboardScreen() {
 
       {/* Status icons overlay - top-right */}
       <div className="absolute top-2 right-2 pointer-events-none flex flex-col gap-1">
-        <span className={`material-symbols-outlined text-base ${usbMounted ? 'text-green-400' : 'text-red-500'}`}>usb</span>
+        <span className={`material-symbols-outlined text-base ${usbState === 'unmounted' ? 'text-red-500' : usbState === 'rw' ? 'text-yellow-400' : 'text-green-400'}`}>usb</span>
         <span className={`material-symbols-outlined text-base ${wifiConnected ? 'text-green-400' : 'text-red-500'}`}>wifi</span>
         <span className={`material-symbols-outlined text-base ${gpsColor}`}>satellite_alt</span>
         <span className={`material-symbols-outlined text-base ${obdColor}`}>directions_car</span>

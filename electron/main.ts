@@ -19,21 +19,20 @@ import { GpioManager } from './gpio/gpio-manager';
 import { logger } from './logger';
 import { TerminalManager } from './terminal/terminal-manager';
 import { CaptureManager } from './capture/capture-manager';
+import { UsbManager } from './usb/usb-manager';
+import { ConfigManager, ConfigV4 } from './usb/config-manager';
 
 // Register custom protocol for serving local PMTiles with Range request support
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local-tiles', privileges: { supportFetchAPI: true, stream: true } },
 ]);
 
-const USB_MOUNT_POINT = '/mnt/obd2-usb';
-const TILES_MOUNT_POINT = '/mnt/obd2-tiles';
-
 let mainWindow: BrowserWindow | null = null;
 const btManager = new BluetoothManager();
 const wifiManager = new WiFiManager();
 const gpioManager = new GpioManager();
-let usbMounted = false;
-let usbAutoMounted = false;  // true when mounted by autoMountUsb (will auto-unmount after theme-load)
+const usbManager = new UsbManager();
+const configManager = new ConfigManager(usbManager);
 let dataSource: DataSource | null = null;
 let isStubMode = true; // Default to stub for development
 let usbResetCount = 0; // Consecutive USB resets without a successful connection
@@ -43,9 +42,7 @@ let usbResetInProgress = false; // Prevent overlapping resets
 // Terminal
 let terminalManager: TerminalManager | null = null;
 
-// Tiles USB
-let tilesMounted = false;
-let tilesDevice: string | null = null;
+// Tiles download
 let tilesDownloadProcess: ChildProcess | null = null;
 
 // GPS source
@@ -374,90 +371,24 @@ function registerIpcHandlers(): void {
   });
 
   // --- USB IPC ---
-  ipcMain.handle('detect-usb', () => {
-    try {
-      const output = execSync('lsblk -J -o NAME,SIZE,TYPE,MOUNTPOINT,TRAN,RM', { encoding: 'utf-8' });
-      const data = JSON.parse(output);
-      const devices: { device: string; size: string; mountpoint: string | null }[] = [];
-      for (const dev of data.blockdevices) {
-        if (dev.tran === 'usb' && dev.rm) {
-          if (dev.children) {
-            for (const part of dev.children) {
-              if (part.type === 'part') {
-                devices.push({
-                  device: `/dev/${part.name}`,
-                  size: part.size,
-                  mountpoint: part.mountpoint || null,
-                });
-              }
-            }
-          }
-        }
-      }
-      return devices;
-    } catch (err) {
-      logger.error('usb', `detect-usb: ${err}`);
-      return [];
-    }
+  ipcMain.handle('usb-get-state', () => {
+    return { state: usbManager.getState(), device: usbManager.getDevice() };
   });
 
-  ipcMain.handle('mount-usb', (_event, device: string) => {
-    if (!/^\/dev\/sd[a-z]\d+$/.test(device)) {
-      return { success: false, error: 'Invalid device path' };
-    }
-    try {
-      execSync(`sudo mkdir -p ${USB_MOUNT_POINT}`, { stdio: 'pipe' });
-      const uid = process.getuid?.() ?? 1000;
-      const gid = process.getgid?.() ?? 1000;
-      execSync(`sudo mount -t vfat -o uid=${uid},gid=${gid} ${device} ${USB_MOUNT_POINT}`, { stdio: 'pipe' });
-      usbMounted = true;
-      return { success: true, mountpoint: USB_MOUNT_POINT };
-    } catch (err) {
-      logger.error('usb', `mount-usb: ${err}`);
-      return { success: false, error: String(err) };
-    }
+  // --- Config IPC ---
+  ipcMain.handle('config-load', () => {
+    return configManager.readLatestConfig();
   });
 
-  ipcMain.handle('unmount-usb', () => {
-    try {
-      execSync(`sudo umount ${USB_MOUNT_POINT}`, { stdio: 'pipe' });
-      usbMounted = false;
-      return { success: true };
-    } catch (err) {
-      usbMounted = false;
-      logger.error('usb', `unmount-usb: ${err}`);
-      return { success: false, error: String(err) };
-    }
-  });
-
-  ipcMain.handle('usb-export-config', (_event, configJson: string) => {
-    try {
-      const configPath = path.join(USB_MOUNT_POINT, 'obd2-config.json');
-      fs.writeFileSync(configPath, configJson, 'utf-8');
-      return { success: true };
-    } catch (err) {
-      logger.error('usb', `usb-export: ${err}`);
-      return { success: false, error: String(err) };
-    }
-  });
-
-  ipcMain.handle('usb-import-config', () => {
-    try {
-      const configPath = path.join(USB_MOUNT_POINT, 'obd2-config.json');
-      if (!fs.existsSync(configPath)) {
-        return { success: false, error: 'obd2-config.json not found' };
-      }
-      const data = fs.readFileSync(configPath, 'utf-8');
-      return { success: true, data };
-    } catch (err) {
-      logger.error('usb', `usb-import: ${err}`);
-      return { success: false, error: String(err) };
-    }
+  ipcMain.handle('config-save', async (_event, data: Record<string, unknown>) => {
+    return configManager.writeConfig(data as unknown as ConfigV4);
   });
 
   // --- Theme IPC ---
+  const USB_MOUNT_POINT = usbManager.getMountPoint();
+
   function getUsbThemeDirs(): string[] {
-    if (!usbMounted) return [];
+    if (!usbManager.isMounted()) return [];
     const usbThemes = path.join(USB_MOUNT_POINT, 'themes');
     return fs.existsSync(usbThemes) ? [usbThemes] : [];
   }
@@ -467,19 +398,7 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('theme-load', (_event, themeId: string) => {
-    const data = loadTheme(themeId, getUsbThemeDirs());
-    // Auto-unmount USB after startup theme restoration (data is fully in memory)
-    if (usbAutoMounted) {
-      usbAutoMounted = false;
-      try {
-        execSync(`sudo umount ${USB_MOUNT_POINT}`, { stdio: 'pipe' });
-        usbMounted = false;
-        logger.info('auto-mount', 'Auto-unmounted USB after theme load');
-      } catch (err) {
-        logger.error('auto-mount', `Auto-unmount failed: ${err}`);
-      }
-    }
-    return data;
+    return loadTheme(themeId, getUsbThemeDirs());
   });
 
   // --- Bluetooth IPC ---
@@ -608,14 +527,18 @@ function registerIpcHandlers(): void {
     return logger.getLogs();
   });
 
-  ipcMain.handle('save-logs-usb', () => {
-    if (!usbMounted) return { success: false, error: 'USB not mounted' };
+  ipcMain.handle('save-logs-usb', async () => {
+    if (!usbManager.isMounted()) return { success: false, error: 'USB not mounted' };
     try {
-      const ts = new Date().toISOString().replace(/[:.]/g, '-');
-      const filePath = path.join(USB_MOUNT_POINT, `obd2-logs-${ts}.txt`);
-      logger.saveLogs(filePath);
-      logger.info('logs', `Saved to ${filePath}`);
-      return { success: true, filePath };
+      return await usbManager.withWriteAccess(async () => {
+        const logsDir = path.join(USB_MOUNT_POINT, 'logs');
+        if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const filePath = path.join(logsDir, `obd2-logs-${ts}.txt`);
+        logger.saveLogs(filePath);
+        logger.info('logs', `Saved to ${filePath}`);
+        return { success: true, filePath };
+      });
     } catch (err) {
       logger.error('logs', `Save failed: ${err}`);
       return { success: false, error: String(err) };
@@ -626,9 +549,7 @@ function registerIpcHandlers(): void {
     logger.info('settings', JSON.stringify(settings));
   });
 
-  ipcMain.handle('is-usb-mounted', () => {
-    return usbMounted;
-  });
+  // Removed: is-usb-mounted (use usb-get-state instead)
 
   // --- Theme Editor IPC ---
   ipcMain.handle('theme-get-dirs', () => {
@@ -636,7 +557,7 @@ function registerIpcHandlers(): void {
     if (!app.isPackaged) {
       dirs.push({ path: getThemesDir(), label: 'Local (themes/)' });
     }
-    if (usbMounted) {
+    if (usbManager.isMounted()) {
       const usbThemes = path.join(USB_MOUNT_POINT, 'themes');
       if (fs.existsSync(usbThemes)) {
         dirs.push({ path: usbThemes, label: 'USB' });
@@ -645,9 +566,10 @@ function registerIpcHandlers(): void {
     return dirs;
   });
 
-  ipcMain.handle('theme-create', (_event, name: string, targetDir?: string) => {
-    try {
-      const baseDir = targetDir ?? getThemesDir();
+  ipcMain.handle('theme-create', async (_event, name: string, targetDir?: string) => {
+    const baseDir = targetDir ?? getThemesDir();
+    const isUsb = baseDir.startsWith(USB_MOUNT_POINT);
+    const doCreate = () => {
       const themeDir = path.join(baseDir, name);
       if (fs.existsSync(themeDir)) {
         return { success: false, error: 'Theme directory already exists' };
@@ -656,69 +578,89 @@ function registerIpcHandlers(): void {
       fs.writeFileSync(path.join(themeDir, 'properties.txt'), '# Theme properties\n', 'utf-8');
       logger.info('theme-editor', `Created theme: ${name}`);
       return { success: true };
+    };
+    try {
+      if (isUsb) return await usbManager.withWriteAccess(async () => doCreate());
+      return doCreate();
     } catch (err) {
       logger.error('theme-editor', `Create theme failed: ${err}`);
       return { success: false, error: String(err) };
     }
   });
 
-  ipcMain.handle('theme-duplicate', (_event, sourceId: string, newName: string) => {
+  // Helper: wrap fn in withWriteAccess if path is on USB
+  async function withUsbWrite<T>(dirPath: string, fn: () => T): Promise<T> {
+    if (dirPath.startsWith(USB_MOUNT_POINT)) {
+      return usbManager.withWriteAccess(async () => fn());
+    }
+    return fn();
+  }
+
+  ipcMain.handle('theme-duplicate', async (_event, sourceId: string, newName: string) => {
     try {
       const sourceDir = resolveThemeDir(sourceId, getUsbThemeDirs());
       if (!sourceDir) return { success: false, error: 'Source theme not found' };
       const parentDir = path.dirname(sourceDir);
       const destDir = path.join(parentDir, newName);
-      if (fs.existsSync(destDir)) {
-        return { success: false, error: 'Theme directory already exists' };
-      }
-      fs.cpSync(sourceDir, destDir, { recursive: true });
-      logger.info('theme-editor', `Duplicated ${sourceId} → ${newName}`);
-      return { success: true };
+      return await withUsbWrite(parentDir, () => {
+        if (fs.existsSync(destDir)) {
+          return { success: false, error: 'Theme directory already exists' };
+        }
+        fs.cpSync(sourceDir, destDir, { recursive: true });
+        logger.info('theme-editor', `Duplicated ${sourceId} → ${newName}`);
+        return { success: true };
+      });
     } catch (err) {
       logger.error('theme-editor', `Duplicate theme failed: ${err}`);
       return { success: false, error: String(err) };
     }
   });
 
-  ipcMain.handle('theme-delete', (_event, themeId: string) => {
+  ipcMain.handle('theme-delete', async (_event, themeId: string) => {
     try {
       const themeDir = resolveThemeDir(themeId, getUsbThemeDirs());
       if (!themeDir) return { success: false, error: 'Theme not found' };
-      fs.rmSync(themeDir, { recursive: true, force: true });
-      logger.info('theme-editor', `Deleted theme: ${themeId}`);
-      return { success: true };
+      return await withUsbWrite(themeDir, () => {
+        fs.rmSync(themeDir, { recursive: true, force: true });
+        logger.info('theme-editor', `Deleted theme: ${themeId}`);
+        return { success: true };
+      });
     } catch (err) {
       logger.error('theme-editor', `Delete theme failed: ${err}`);
       return { success: false, error: String(err) };
     }
   });
 
-  ipcMain.handle('theme-rename', (_event, themeId: string, newName: string) => {
+  ipcMain.handle('theme-rename', async (_event, themeId: string, newName: string) => {
     try {
       const themeDir = resolveThemeDir(themeId, getUsbThemeDirs());
       if (!themeDir) return { success: false, error: 'Theme not found' };
       const parentDir = path.dirname(themeDir);
-      const newDir = path.join(parentDir, newName);
-      if (fs.existsSync(newDir)) {
-        return { success: false, error: 'Theme directory already exists' };
-      }
-      fs.renameSync(themeDir, newDir);
-      logger.info('theme-editor', `Renamed ${themeId} → ${newName}`);
-      return { success: true };
+      return await withUsbWrite(parentDir, () => {
+        const newDir = path.join(parentDir, newName);
+        if (fs.existsSync(newDir)) {
+          return { success: false, error: 'Theme directory already exists' };
+        }
+        fs.renameSync(themeDir, newDir);
+        logger.info('theme-editor', `Renamed ${themeId} → ${newName}`);
+        return { success: true };
+      });
     } catch (err) {
       logger.error('theme-editor', `Rename theme failed: ${err}`);
       return { success: false, error: String(err) };
     }
   });
 
-  ipcMain.handle('theme-save-properties', (_event, themeId: string, properties: Record<string, string>) => {
+  ipcMain.handle('theme-save-properties', async (_event, themeId: string, properties: Record<string, string>) => {
     try {
       const themeDir = resolveThemeDir(themeId, getUsbThemeDirs());
       if (!themeDir) return { success: false, error: 'Theme not found' };
-      const lines = Object.entries(properties).map(([k, v]) => `${k}=${v}`);
-      fs.writeFileSync(path.join(themeDir, 'properties.txt'), lines.join('\n') + '\n', 'utf-8');
-      logger.info('theme-editor', `Saved properties for ${themeId} (${lines.length} entries)`);
-      return { success: true };
+      return await withUsbWrite(themeDir, () => {
+        const lines = Object.entries(properties).map(([k, v]) => `${k}=${v}`);
+        fs.writeFileSync(path.join(themeDir, 'properties.txt'), lines.join('\n') + '\n', 'utf-8');
+        logger.info('theme-editor', `Saved properties for ${themeId} (${lines.length} entries)`);
+        return { success: true };
+      });
     } catch (err) {
       logger.error('theme-editor', `Save properties failed: ${err}`);
       return { success: false, error: String(err) };
@@ -736,14 +678,16 @@ function registerIpcHandlers(): void {
     }
   });
 
-  ipcMain.handle('theme-write-asset', (_event, themeId: string, assetName: string, base64Data: string) => {
+  ipcMain.handle('theme-write-asset', async (_event, themeId: string, assetName: string, base64Data: string) => {
     try {
       const themeDir = resolveThemeDir(themeId, getUsbThemeDirs());
       if (!themeDir) return { success: false, error: 'Theme not found' };
-      const raw = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-      fs.writeFileSync(path.join(themeDir, assetName), Buffer.from(raw, 'base64'));
-      logger.info('theme-editor', `Wrote asset ${assetName} to ${themeId}`);
-      return { success: true };
+      return await withUsbWrite(themeDir, () => {
+        const raw = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+        fs.writeFileSync(path.join(themeDir, assetName), Buffer.from(raw, 'base64'));
+        logger.info('theme-editor', `Wrote asset ${assetName} to ${themeId}`);
+        return { success: true };
+      });
     } catch (err) {
       logger.error('theme-editor', `Write asset failed: ${err}`);
       return { success: false, error: String(err) };
@@ -762,29 +706,33 @@ function registerIpcHandlers(): void {
     return { success: true, filePath: result.filePaths[0] };
   });
 
-  ipcMain.handle('theme-copy-asset', (_event, themeId: string, sourcePath: string, assetName: string) => {
+  ipcMain.handle('theme-copy-asset', async (_event, themeId: string, sourcePath: string, assetName: string) => {
     try {
       const themeDir = resolveThemeDir(themeId, getUsbThemeDirs());
       if (!themeDir) return { success: false, error: 'Theme not found' };
-      fs.copyFileSync(sourcePath, path.join(themeDir, assetName));
-      logger.info('theme-editor', `Copied asset ${assetName} to ${themeId}`);
-      return { success: true };
+      return await withUsbWrite(themeDir, () => {
+        fs.copyFileSync(sourcePath, path.join(themeDir, assetName));
+        logger.info('theme-editor', `Copied asset ${assetName} to ${themeId}`);
+        return { success: true };
+      });
     } catch (err) {
       logger.error('theme-editor', `Copy asset failed: ${err}`);
       return { success: false, error: String(err) };
     }
   });
 
-  ipcMain.handle('theme-delete-asset', (_event, themeId: string, assetName: string) => {
+  ipcMain.handle('theme-delete-asset', async (_event, themeId: string, assetName: string) => {
     try {
       const themeDir = resolveThemeDir(themeId, getUsbThemeDirs());
       if (!themeDir) return { success: false, error: 'Theme not found' };
-      const assetPath = path.join(themeDir, assetName);
-      if (fs.existsSync(assetPath)) {
-        fs.unlinkSync(assetPath);
-        logger.info('theme-editor', `Deleted asset ${assetName} from ${themeId}`);
-      }
-      return { success: true };
+      return await withUsbWrite(themeDir, () => {
+        const assetPath = path.join(themeDir, assetName);
+        if (fs.existsSync(assetPath)) {
+          fs.unlinkSync(assetPath);
+          logger.info('theme-editor', `Deleted asset ${assetName} from ${themeId}`);
+        }
+        return { success: true };
+      });
     } catch (err) {
       logger.error('theme-editor', `Delete asset failed: ${err}`);
       return { success: false, error: String(err) };
@@ -846,7 +794,7 @@ function registerIpcHandlers(): void {
   // --- Map IPC ---
   ipcMain.handle('map-list-tiles', () => {
     const dirs = [
-      path.join(TILES_MOUNT_POINT, 'tiles'),
+      path.join(USB_MOUNT_POINT, 'tiles'),
       path.join(os.homedir(), 'tiles'),
       path.join(__dirname, '..', 'tiles'),
       path.join(__dirname, '..', 'scripts'),
@@ -866,35 +814,24 @@ function registerIpcHandlers(): void {
     return files;
   });
 
-  // --- Tiles USB ---
-
-  ipcMain.handle('tiles-get-status', () => {
-    return { mounted: tilesMounted, device: tilesDevice, mountpoint: tilesMounted ? TILES_MOUNT_POINT : null };
-  });
-
-  ipcMain.handle('tiles-auto-mount', async () => {
-    return autoMountTilesUsb();
-  });
+  // --- Tiles Download ---
 
   ipcMain.handle('tiles-download', async (_event, bbox: [number, number, number, number], maxzoom: number) => {
-    if (!tilesMounted || !tilesDevice) {
-      return { success: false, error: 'Tiles USB not mounted' };
+    if (!usbManager.isMounted()) {
+      return { success: false, error: 'USB not mounted' };
     }
     const pmtilesCmd = findPmtilesCli();
     if (!pmtilesCmd) {
       return { success: false, error: 'pmtiles CLI not found' };
     }
 
-    // Remount rw
     try {
-      execSync(`sudo mount -o remount,rw ${TILES_MOUNT_POINT}`, { stdio: 'pipe' });
-      logger.info('tiles', 'Remounted rw for download');
+      await usbManager.acquireWrite();
     } catch (err) {
-      logger.error('tiles', `Remount rw failed: ${err}`);
-      return { success: false, error: `Remount rw failed: ${err}` };
+      return { success: false, error: `RW remount failed: ${err}` };
     }
 
-    const tilesDir = path.join(TILES_MOUNT_POINT, 'tiles');
+    const tilesDir = path.join(USB_MOUNT_POINT, 'tiles');
     try { fs.mkdirSync(tilesDir, { recursive: true }); } catch { /* exists */ }
 
     const outputPath = path.join(tilesDir, 'map.pmtiles');
@@ -918,25 +855,16 @@ function registerIpcHandlers(): void {
       proc.stderr?.on('data', (data: Buffer) => {
         const text = data.toString();
         stderr += text;
-        // Send progress to renderer
         mainWindow?.webContents.send('tiles-download-progress', text.trim());
       });
 
       proc.stdout?.on('data', (data: Buffer) => {
-        const text = data.toString();
-        mainWindow?.webContents.send('tiles-download-progress', text.trim());
+        mainWindow?.webContents.send('tiles-download-progress', data.toString().trim());
       });
 
       proc.on('close', (code) => {
         tilesDownloadProcess = null;
-        // Remount ro
-        try {
-          execSync(`sudo mount -o remount,ro ${TILES_MOUNT_POINT}`, { stdio: 'pipe' });
-          logger.info('tiles', 'Remounted ro after download');
-        } catch (err) {
-          logger.error('tiles', `Remount ro failed: ${err}`);
-        }
-
+        usbManager.releaseWrite();
         if (code === 0) {
           logger.info('tiles', 'Download complete');
           resolve({ success: true });
@@ -948,9 +876,7 @@ function registerIpcHandlers(): void {
 
       proc.on('error', (err) => {
         tilesDownloadProcess = null;
-        try {
-          execSync(`sudo mount -o remount,ro ${TILES_MOUNT_POINT}`, { stdio: 'pipe' });
-        } catch { /* best effort */ }
+        usbManager.releaseWrite();
         logger.error('tiles', `Download spawn error: ${err}`);
         resolve({ success: false, error: String(err) });
       });
@@ -961,10 +887,7 @@ function registerIpcHandlers(): void {
     if (tilesDownloadProcess) {
       tilesDownloadProcess.kill('SIGTERM');
       tilesDownloadProcess = null;
-      // Remount ro
-      try {
-        execSync(`sudo mount -o remount,ro ${TILES_MOUNT_POINT}`, { stdio: 'pipe' });
-      } catch { /* best effort */ }
+      // releaseWrite will be called by the 'close' handler
       logger.info('tiles', 'Download cancelled');
       return { success: true };
     }
@@ -972,9 +895,14 @@ function registerIpcHandlers(): void {
   });
 
   // --- Capture IPC ---
-  ipcMain.handle('capture-start', () => {
-    if (!usbMounted) {
+  ipcMain.handle('capture-start', async () => {
+    if (!usbManager.isMounted()) {
       return { success: false, error: 'USB not mounted' };
+    }
+    try {
+      await usbManager.acquireWrite();
+    } catch (err) {
+      return { success: false, error: `RW remount failed: ${err}` };
     }
     const captureDir = path.join(USB_MOUNT_POINT, 'capture');
     try {
@@ -982,6 +910,7 @@ function registerIpcHandlers(): void {
         fs.mkdirSync(captureDir, { recursive: true });
       }
     } catch (e) {
+      await usbManager.releaseWrite();
       return { success: false, error: `Failed to create capture dir: ${e}` };
     }
     const now = new Date();
@@ -991,8 +920,9 @@ function registerIpcHandlers(): void {
     return { success: true, filePath };
   });
 
-  ipcMain.handle('capture-stop', () => {
+  ipcMain.handle('capture-stop', async () => {
     captureManager.stop();
+    await usbManager.releaseWrite();
     return { success: true };
   });
 
@@ -1011,119 +941,6 @@ function findPmtilesCli(): string | null {
   const scriptPath = path.join(__dirname, '..', 'scripts', 'pmtiles');
   if (fs.existsSync(scriptPath)) return scriptPath;
   return null;
-}
-
-function getUsbPartitions(): { device: string; mountpoint: string | null }[] {
-  try {
-    const output = execSync('lsblk -J -o NAME,SIZE,TYPE,MOUNTPOINT,TRAN,RM', { encoding: 'utf-8' });
-    const data = JSON.parse(output);
-    const parts: { device: string; mountpoint: string | null }[] = [];
-    for (const dev of data.blockdevices) {
-      if (dev.tran === 'usb' && dev.rm && dev.children) {
-        for (const part of dev.children) {
-          if (part.type === 'part') {
-            parts.push({ device: `/dev/${part.name}`, mountpoint: part.mountpoint || null });
-          }
-        }
-      }
-    }
-    return parts;
-  } catch {
-    return [];
-  }
-}
-
-function autoMountTilesUsb(): { success: boolean; device?: string; error?: string } {
-  // Already mounted?
-  try {
-    execSync(`mountpoint -q ${TILES_MOUNT_POINT}`, { stdio: 'pipe' });
-    tilesMounted = true;
-    // Detect device from mount
-    if (!tilesDevice) {
-      try {
-        const mountInfo = execSync(`findmnt -n -o SOURCE ${TILES_MOUNT_POINT}`, { encoding: 'utf-8' }).trim();
-        tilesDevice = mountInfo || null;
-      } catch { /* ignore */ }
-    }
-    logger.info('tiles', `Already mounted at ${TILES_MOUNT_POINT}`);
-    return { success: true, device: tilesDevice || undefined };
-  } catch { /* not mounted */ }
-
-  const uid = process.getuid?.() ?? 1000;
-  const gid = process.getgid?.() ?? 1000;
-  const parts = getUsbPartitions();
-
-  for (const part of parts) {
-    // Skip partitions already mounted elsewhere (e.g., obd2-usb)
-    if (part.mountpoint && !part.mountpoint.includes('obd2-tiles')) continue;
-
-    // Temporarily mount to check for tiles/ folder
-    const tmpMount = '/tmp/obd2-tiles-check';
-    try {
-      execSync(`sudo mkdir -p ${tmpMount}`, { stdio: 'pipe' });
-      execSync(`sudo mount -t vfat -o ro,uid=${uid},gid=${gid} ${part.device} ${tmpMount}`, { stdio: 'pipe' });
-      const hasTiles = fs.existsSync(path.join(tmpMount, 'tiles'));
-      execSync(`sudo umount ${tmpMount}`, { stdio: 'pipe' });
-
-      if (hasTiles) {
-        // Mount at the real mount point
-        execSync(`sudo mkdir -p ${TILES_MOUNT_POINT}`, { stdio: 'pipe' });
-        execSync(`sudo mount -t vfat -o ro,uid=${uid},gid=${gid} ${part.device} ${TILES_MOUNT_POINT}`, { stdio: 'pipe' });
-        tilesMounted = true;
-        tilesDevice = part.device;
-        logger.info('tiles', `Mounted ${part.device} at ${TILES_MOUNT_POINT} (ro)`);
-        return { success: true, device: part.device };
-      }
-    } catch (err) {
-      try { execSync(`sudo umount ${tmpMount}`, { stdio: 'pipe' }); } catch { /* ignore */ }
-      logger.error('tiles', `Check ${part.device} failed: ${err}`);
-    }
-  }
-
-  logger.info('tiles', 'No USB with tiles/ folder found');
-  return { success: false, error: 'No USB with tiles/ folder found' };
-}
-
-/** Auto-mount USB if a device is present (for theme/config restoration after reboot) */
-function autoMountUsb(): void {
-  // Check if already mounted
-  try {
-    execSync(`mountpoint -q ${USB_MOUNT_POINT}`, { stdio: 'pipe' });
-    usbMounted = true;
-    usbAutoMounted = true;
-    logger.info('auto-mount', 'Already mounted');
-    return;
-  } catch {
-    // Not mounted — try to detect and mount
-  }
-
-  try {
-    const output = execSync('lsblk -J -o NAME,SIZE,TYPE,MOUNTPOINT,TRAN,RM', { encoding: 'utf-8' });
-    const data = JSON.parse(output);
-    for (const dev of data.blockdevices) {
-      if (dev.tran === 'usb' && dev.rm && dev.children) {
-        for (const part of dev.children) {
-          if (part.type === 'part' && !part.mountpoint) {
-            const device = `/dev/${part.name}`;
-            try {
-              execSync(`sudo mkdir -p ${USB_MOUNT_POINT}`, { stdio: 'pipe' });
-              const uid = process.getuid?.() ?? 1000;
-              const gid = process.getgid?.() ?? 1000;
-              execSync(`sudo mount -t vfat -o uid=${uid},gid=${gid} ${device} ${USB_MOUNT_POINT}`, { stdio: 'pipe' });
-              usbMounted = true;
-              usbAutoMounted = true;
-              logger.info('auto-mount', `Mounted ${device} to ${USB_MOUNT_POINT}`);
-              return;
-            } catch (err) {
-              logger.error('auto-mount', `Failed to mount ${device}: ${err}`);
-            }
-          }
-        }
-      }
-    }
-  } catch (err) {
-    logger.error('auto-mount', `USB detection failed: ${err}`);
-  }
 }
 
 app.whenReady().then(() => {
@@ -1206,12 +1023,16 @@ app.whenReady().then(() => {
     isStubMode = false;
   }
   logger.info('app', `Starting (mode=${isStubMode ? 'stub' : 'real'}, packaged=${app.isPackaged})`);
-  autoMountUsb();
-  logger.info('app', `USB mounted=${usbMounted}`);
+  usbManager.autoDetectAndMount();
+  logger.info('app', `USB state=${usbManager.getState()}`);
   registerIpcHandlers();
   // Forward GPIO changes to renderer
   gpioManager.onChange((event) => {
     mainWindow?.webContents.send('gpio-change', event);
+  });
+  // Forward USB state changes to renderer
+  usbManager.onChange((state) => {
+    mainWindow?.webContents.send('usb-state-change', state);
   });
   createWindow();
 });

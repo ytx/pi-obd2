@@ -51,16 +51,19 @@ const obd2API = {
   stubGetConfig: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke('stub-get-config'),
 
   // USB
-  detectUsb: (): Promise<Array<{ device: string; size: string; mountpoint: string | null }>> =>
-    ipcRenderer.invoke('detect-usb'),
-  mountUsb: (device: string): Promise<{ success: boolean; mountpoint?: string; error?: string }> =>
-    ipcRenderer.invoke('mount-usb', device),
-  unmountUsb: (): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke('unmount-usb'),
-  usbExportConfig: (configJson: string): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke('usb-export-config', configJson),
-  usbImportConfig: (): Promise<{ success: boolean; data?: string; error?: string }> =>
-    ipcRenderer.invoke('usb-import-config'),
+  usbGetState: (): Promise<{ state: string; device: string | null }> =>
+    ipcRenderer.invoke('usb-get-state'),
+  onUsbStateChange: (callback: (state: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: string) => callback(state);
+    ipcRenderer.on('usb-state-change', listener);
+    return () => { ipcRenderer.removeListener('usb-state-change', listener); };
+  },
+
+  // Config (USB)
+  configLoad: (): Promise<Record<string, unknown> | null> =>
+    ipcRenderer.invoke('config-load'),
+  configSave: (data: Record<string, unknown>): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('config-save', data),
 
   // Themes
   themeList: (): Promise<Array<{ id: string; name: string; screenshotBase64?: string }>> =>
@@ -162,10 +165,6 @@ const obd2API = {
   // Map
   mapListTiles: (): Promise<Array<{ path: string; name: string; size: number }>> =>
     ipcRenderer.invoke('map-list-tiles'),
-  tilesGetStatus: (): Promise<{ mounted: boolean; device: string | null; mountpoint: string | null }> =>
-    ipcRenderer.invoke('tiles-get-status'),
-  tilesAutoMount: (): Promise<{ success: boolean; device?: string; error?: string }> =>
-    ipcRenderer.invoke('tiles-auto-mount'),
   tilesDownload: (bbox: [number, number, number, number], maxzoom: number): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('tiles-download', bbox, maxzoom),
   tilesDownloadCancel: (): Promise<{ success: boolean; error?: string }> =>
@@ -191,7 +190,6 @@ const obd2API = {
     ipcRenderer.invoke('save-logs-usb'),
   logSettings: (settings: Record<string, unknown>): Promise<void> =>
     ipcRenderer.invoke('log-settings', settings),
-  isUsbMounted: (): Promise<boolean> => ipcRenderer.invoke('is-usb-mounted'),
 };
 
 contextBridge.exposeInMainWorld('obd2API', obd2API);

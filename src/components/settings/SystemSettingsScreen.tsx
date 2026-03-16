@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { useAppStore } from '@/stores/useAppStore';
 import UsbSection from '@/components/settings/UsbSection';
 
+type UsbState = 'unmounted' | 'ro' | 'rw';
+
 function SystemSettingsScreen() {
   const { setScreen } = useAppStore();
-  const [usbMounted, setUsbMounted] = useState(false);
+  const [usbState, setUsbState] = useState<UsbState>('unmounted');
   const [logSaveStatus, setLogSaveStatus] = useState<string | null>(null);
   const [configSaveStatus, setConfigSaveStatus] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
@@ -12,11 +14,27 @@ function SystemSettingsScreen() {
   const [captureFile, setCaptureFile] = useState<string | null>(null);
   const [captureMessage, setCaptureMessage] = useState<string | null>(null);
 
-  // Poll USB mount status + capture status
+  const usbAvailable = usbState !== 'unmounted';
+
+  // USB state via IPC (event-driven, no polling)
+  useEffect(() => {
+    let cancelled = false;
+    window.obd2API.usbGetState().then((s) => {
+      if (!cancelled) setUsbState(s.state as UsbState);
+    });
+    const cleanup = window.obd2API.onUsbStateChange((state: string) => {
+      if (!cancelled) setUsbState(state as UsbState);
+    });
+    return () => {
+      cancelled = true;
+      cleanup();
+    };
+  }, []);
+
+  // Poll capture status
   useEffect(() => {
     const poll = () => {
       if (window.obd2API) {
-        window.obd2API.isUsbMounted().then(setUsbMounted);
         window.obd2API.captureStatus().then((s) => {
           setCapturing(s.capturing);
           setCaptureCount(s.count);
@@ -100,7 +118,7 @@ function SystemSettingsScreen() {
         <UsbSection />
 
         {/* Capture */}
-        {usbMounted && (
+        {usbAvailable && (
           <div className="bg-obd-surface rounded-lg p-4">
             <h2 className="text-lg font-semibold text-obd-primary mb-3">Data Capture</h2>
             <div className="flex items-center gap-4">
@@ -146,7 +164,7 @@ function SystemSettingsScreen() {
         >
           {configSaveStatus ?? 'Save Config'}
         </button>
-        {usbMounted && (
+        {usbAvailable && (
           <button
             onClick={handleSaveLogs}
             className="flex-1 py-3 bg-obd-surface text-obd-accent border border-obd-dim rounded-lg hover:bg-obd-dim/30 transition-colors"

@@ -101,19 +101,16 @@ function MapPanel() {
   // Determine map theme from illumination (ON = night = dark)
   const mapTheme: MapTheme = illuminationActive ? 'dark' : 'light';
 
-  // Auto-mount tiles USB, then discover available PMTiles files
+  // Discover available PMTiles files (USB already mounted at startup)
   useEffect(() => {
     let cancelled = false;
-    window.obd2API.tilesAutoMount().then(() => {
+    window.obd2API.mapListTiles().then((files) => {
       if (cancelled) return;
-      window.obd2API.mapListTiles().then((files) => {
-        if (cancelled) return;
-        if (files.length > 0) {
-          setTilesUrl(`local-tiles://${files[0].path}`);
-        } else {
-          setError('No .pmtiles files found');
-        }
-      });
+      if (files.length > 0) {
+        setTilesUrl(`local-tiles://${files[0].path}`);
+      } else {
+        setError('No .pmtiles files found');
+      }
     });
     return () => { cancelled = true; };
   }, []);

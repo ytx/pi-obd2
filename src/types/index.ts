@@ -154,6 +154,8 @@ export interface WiFiNetwork {
 }
 
 // USB types
+export type UsbState = 'unmounted' | 'ro' | 'rw';
+
 export interface UsbDevice {
   device: string;
   size: string;
