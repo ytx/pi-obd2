@@ -411,7 +411,9 @@ function registerIpcHandlers(): void {
 
   // --- Config IPC ---
   ipcMain.handle('config-load', () => {
-    return configManager.readLatestConfig();
+    const config = configManager.readLatestConfig();
+    logger.info('config', `config-load: ${config ? `v${config.version}, keys=${Object.keys(config).join(',')}` : 'null (USB not mounted or no config)'}`);
+    return config;
   });
 
   ipcMain.handle('config-save', async (_event, data: Record<string, unknown>) => {
