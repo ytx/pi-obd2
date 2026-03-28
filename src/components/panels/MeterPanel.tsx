@@ -5,6 +5,9 @@ import { useThemeStore } from '@/stores/useThemeStore';
 import { renderMeter } from '@/canvas/meter-renderer';
 import { useCanvasSize } from './useCanvasSize';
 
+const LERP_FACTOR = 0.12; // 12% per frame — smooth but responsive
+const SNAP_THRESHOLD = 0.3; // snap to target when close enough
+
 interface MeterPanelProps {
   pid: string;
   label: string;
@@ -61,6 +64,19 @@ function MeterPanel({ pid, label, min, max, unit, config, decimals }: MeterPanel
     : config;
   const fontFamily = fontLoaded ? 'TorqueThemeFont, sans-serif' : undefined;
 
+  // Lerp animation loop
+  const displayValueRef = useRef<number | null>(null);
+  const targetValueRef = useRef<number>(min);
+  const rafRef = useRef<number>(0);
+
+  // Update target when OBD value changes
+  const targetValue = val?.value ?? min;
+  targetValueRef.current = targetValue;
+  // Initialize display value on first data
+  if (displayValueRef.current === null) {
+    displayValueRef.current = targetValue;
+  }
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || width === 0 || height === 0) return;
@@ -68,28 +84,50 @@ function MeterPanel({ pid, label, min, max, unit, config, decimals }: MeterPanel
     canvas.width = width * dpr;
     canvas.height = height * dpr;
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    function draw() {
+      const ctx = canvas!.getContext('2d');
+      if (!ctx) return;
 
-    ctx.save();
-    ctx.scale(dpr, dpr);
-    renderMeter({
-      ctx,
-      width,
-      height,
-      value: val?.value ?? min,
-      min,
-      max,
-      title: label,
-      unit,
-      config: activeConfig,
-      backgroundImage: bgImage,
-      needleImage,
-      fontFamily,
-      decimals,
-    });
-    ctx.restore();
-  }, [width, height, dpr, val, min, max, label, unit, activeConfig, bgImage, needleImage, fontFamily, decimals]);
+      // Lerp display value toward target
+      const target = targetValueRef.current;
+      let display = displayValueRef.current ?? target;
+      const diff = target - display;
+      if (Math.abs(diff) < SNAP_THRESHOLD) {
+        display = target;
+      } else {
+        display += diff * LERP_FACTOR;
+      }
+      displayValueRef.current = display;
+
+      ctx.save();
+      ctx.scale(dpr, dpr);
+      renderMeter({
+        ctx,
+        width,
+        height,
+        value: display,
+        min,
+        max,
+        title: label,
+        unit,
+        config: activeConfig,
+        backgroundImage: bgImage,
+        needleImage,
+        fontFamily,
+        decimals,
+      });
+      ctx.restore();
+
+      // Keep animating while not snapped
+      if (display !== target) {
+        rafRef.current = requestAnimationFrame(draw);
+      }
+    }
+
+    // Start animation
+    rafRef.current = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [width, height, dpr, targetValue, min, max, label, unit, activeConfig, bgImage, needleImage, fontFamily, decimals]);
 
   return (
     <div ref={containerRef} className={`h-full w-full rounded-lg overflow-hidden ${currentThemeId ? '' : 'bg-obd-surface'}`}>
