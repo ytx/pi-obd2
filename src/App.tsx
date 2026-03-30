@@ -42,7 +42,7 @@ function App() {
     }
   }, [setHostname]);
 
-  // Load USB config at startup → override localStorage stores, then restore theme
+  // Load USB config/settings/status at startup → override localStorage stores, then restore theme
   useEffect(() => {
     if (!window.obd2API) return;
 
@@ -57,37 +57,22 @@ function App() {
       waitForHydration(useMapStore),
       waitForHydration(useTpmsStore),
     ]).then(async () => {
-      // Try loading USB config (overrides localStorage values)
-      const config = await window.obd2API.configLoad();
+      // Load all 3 config files in parallel
+      const [config, settings, status] = await Promise.all([
+        window.obd2API.configLoad(),
+        window.obd2API.settingsLoad(),
+        window.obd2API.statusLoad(),
+      ]);
+
+      // Apply config (boards, layouts, destinations, pidConfig)
       if (config) {
         const c = config as Record<string, unknown>;
-        // Apply USB config to stores
         const boardState = useBoardStore.getState();
         if (Array.isArray(c.boards) && c.boards.length > 0) {
-          // Use setState to batch-update board store
           useBoardStore.setState({
             boards: c.boards as typeof boardState.boards,
             layouts: (c.layouts as typeof boardState.layouts) ?? boardState.layouts,
-            currentBoardId: (c.currentBoardId as string) || boardState.currentBoardId,
-            screenPadding: (c.screenPadding as number) ?? boardState.screenPadding,
           });
-        }
-        if (c.obdDevicePath !== undefined) {
-          useOBDStore.getState().setObdDevicePath(c.obdDevicePath as string | null);
-        }
-        if (c.gpsDevicePath !== undefined) {
-          useGpsStore.getState().setGpsDevicePath(c.gpsDevicePath as string | null);
-        }
-        if (c.gpio && typeof c.gpio === 'object') {
-          const g = c.gpio as Record<string, unknown>;
-          const gs = useGpioStore.getState();
-          if (g.illuminationPin !== undefined) gs.setIlluminationPin(g.illuminationPin as number | null);
-          if (g.reversePin !== undefined) gs.setReversePin(g.reversePin as number | null);
-          if (g.illuminationActiveHigh !== undefined) gs.setIlluminationActiveHigh(g.illuminationActiveHigh as boolean);
-          if (g.reverseActiveHigh !== undefined) gs.setReverseActiveHigh(g.reverseActiveHigh as boolean);
-          if (g.illuminationThemeId !== undefined) gs.setIlluminationThemeId(g.illuminationThemeId as string | null);
-          if (g.reverseBoardId !== undefined) gs.setReverseBoardId(g.reverseBoardId as string | null);
-          if (g.usbResetPin !== undefined) gs.setUsbResetPin(g.usbResetPin as number | null);
         }
         if (c.pidConfig && typeof c.pidConfig === 'object') {
           const pidConfigs = c.pidConfig as Record<string, { name?: string; unit?: string; min?: number; max?: number; use?: boolean }>;
@@ -98,28 +83,66 @@ function App() {
         if (Array.isArray(c.destinations)) {
           useMapStore.setState({
             destinations: c.destinations as import('@/stores/useMapStore').Destination[],
-            activeDestinationId: (c.activeDestinationId as string) ?? null,
-            headingUp: (c.headingUp as boolean) ?? useMapStore.getState().headingUp,
           });
-        }
-        if (c.tpms && typeof c.tpms === 'object') {
-          const t = c.tpms as Record<string, unknown>;
-          const ts = useTpmsStore.getState();
-          if (t.sensorAssignments) ts.setSensorAssignment('FL', (t.sensorAssignments as Record<string, string | null>).FL ?? null);
-          if (t.sensorAssignments) ts.setSensorAssignment('FR', (t.sensorAssignments as Record<string, string | null>).FR ?? null);
-          if (t.sensorAssignments) ts.setSensorAssignment('RL', (t.sensorAssignments as Record<string, string | null>).RL ?? null);
-          if (t.sensorAssignments) ts.setSensorAssignment('RR', (t.sensorAssignments as Record<string, string | null>).RR ?? null);
-          if (t.pressureUnit) ts.setPressureUnit(t.pressureUnit as 'kPa' | 'psi' | 'bar');
-          if (t.alertThreshold !== undefined) ts.setAlertThreshold(t.alertThreshold as number);
-        }
-        // Theme from USB config
-        const themeId = c.currentThemeId as string | null;
-        if (themeId) {
-          useThemeStore.setState({ currentThemeId: themeId });
         }
       }
 
-      // Restore theme (from USB config or localStorage)
+      // Apply settings (device paths, GPIO, TPMS, screenPadding)
+      if (settings) {
+        const s = settings as Record<string, unknown>;
+        if (s.screenPadding !== undefined) {
+          useBoardStore.setState({ screenPadding: s.screenPadding as number });
+        }
+        if (s.obdDevicePath !== undefined) {
+          useOBDStore.getState().setObdDevicePath(s.obdDevicePath as string | null);
+        }
+        if (s.gpsDevicePath !== undefined) {
+          useGpsStore.getState().setGpsDevicePath(s.gpsDevicePath as string | null);
+        }
+        if (s.gpio && typeof s.gpio === 'object') {
+          const g = s.gpio as Record<string, unknown>;
+          const gs = useGpioStore.getState();
+          if (g.illuminationPin !== undefined) gs.setIlluminationPin(g.illuminationPin as number | null);
+          if (g.reversePin !== undefined) gs.setReversePin(g.reversePin as number | null);
+          if (g.illuminationActiveHigh !== undefined) gs.setIlluminationActiveHigh(g.illuminationActiveHigh as boolean);
+          if (g.reverseActiveHigh !== undefined) gs.setReverseActiveHigh(g.reverseActiveHigh as boolean);
+          if (g.illuminationThemeId !== undefined) gs.setIlluminationThemeId(g.illuminationThemeId as string | null);
+          if (g.reverseBoardId !== undefined) gs.setReverseBoardId(g.reverseBoardId as string | null);
+          if (g.usbResetPin !== undefined) gs.setUsbResetPin(g.usbResetPin as number | null);
+        }
+        if (s.tpms && typeof s.tpms === 'object') {
+          const t = s.tpms as Record<string, unknown>;
+          const ts = useTpmsStore.getState();
+          if (t.sensorAssignments) {
+            const a = t.sensorAssignments as Record<string, string | null>;
+            ts.setSensorAssignment('FL', a.FL ?? null);
+            ts.setSensorAssignment('FR', a.FR ?? null);
+            ts.setSensorAssignment('RL', a.RL ?? null);
+            ts.setSensorAssignment('RR', a.RR ?? null);
+          }
+          if (t.pressureUnit) ts.setPressureUnit(t.pressureUnit as 'kPa' | 'psi' | 'bar');
+          if (t.alertThreshold !== undefined) ts.setAlertThreshold(t.alertThreshold as number);
+        }
+      }
+
+      // Apply status (currentThemeId, currentBoardId, activeDestinationId, headingUp)
+      if (status) {
+        const st = status as Record<string, unknown>;
+        if (st.currentThemeId !== undefined) {
+          useThemeStore.setState({ currentThemeId: st.currentThemeId as string | null });
+        }
+        if (st.currentBoardId) {
+          useBoardStore.setState({ currentBoardId: st.currentBoardId as string });
+        }
+        if (st.activeDestinationId !== undefined || st.headingUp !== undefined) {
+          useMapStore.setState({
+            ...(st.activeDestinationId !== undefined ? { activeDestinationId: st.activeDestinationId as string | null } : {}),
+            ...(st.headingUp !== undefined ? { headingUp: st.headingUp as boolean } : {}),
+          });
+        }
+      }
+
+      // Restore theme (from USB status or localStorage)
       const themeId = useThemeStore.getState().currentThemeId;
       if (themeId) {
         window.obd2API.themeLoad(themeId).then((data: unknown) => {

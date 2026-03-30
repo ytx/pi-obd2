@@ -39,9 +39,12 @@ declare global {
       usbGetState: () => Promise<{ state: UsbState; device: string | null }>;
       onUsbStateChange: (callback: (state: UsbState) => void) => () => void;
 
-      // Config (USB)
+      // Config (USB) — 3-file split: config / settings / status
       configLoad: () => Promise<Record<string, unknown> | null>;
+      settingsLoad: () => Promise<Record<string, unknown> | null>;
+      statusLoad: () => Promise<Record<string, unknown> | null>;
       configSave: (data: Record<string, unknown>) => Promise<{ success: boolean; error?: string }>;
+      settingsStatusSave: (settings: Record<string, unknown>, status: Record<string, unknown>) => Promise<{ success: boolean; error?: string }>;
 
       // Themes
       themeList: () => Promise<ThemeInfo[]>;

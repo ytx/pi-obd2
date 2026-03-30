@@ -24,7 +24,7 @@ import { logger } from './logger';
 import { TerminalManager } from './terminal/terminal-manager';
 import { CaptureManager } from './capture/capture-manager';
 import { UsbManager } from './usb/usb-manager';
-import { ConfigManager, ConfigV4 } from './usb/config-manager';
+import { ConfigManager, OBD2Config, OBD2Settings, OBD2Status } from './usb/config-manager';
 
 // Register custom protocol for serving local PMTiles with Range request support
 protocol.registerSchemesAsPrivileged([
@@ -409,15 +409,31 @@ function registerIpcHandlers(): void {
     return { state: usbManager.getState(), device: usbManager.getDevice() };
   });
 
-  // --- Config IPC ---
+  // --- Config IPC (3-file split: config / settings / status) ---
   ipcMain.handle('config-load', () => {
     const config = configManager.readLatestConfig();
-    logger.info('config', `config-load: ${config ? `v${config.version}, keys=${Object.keys(config).join(',')}` : 'null (USB not mounted or no config)'}`);
+    logger.info('config', `config-load: ${config ? `v${config.version}, keys=${Object.keys(config).join(',')}` : 'null'}`);
     return config;
   });
 
+  ipcMain.handle('settings-load', () => {
+    const settings = configManager.readLatestSettings();
+    logger.info('config', `settings-load: ${settings ? `v${settings.version}` : 'null'}`);
+    return settings;
+  });
+
+  ipcMain.handle('status-load', () => {
+    const status = configManager.readLatestStatus();
+    logger.info('config', `status-load: ${status ? `v${status.version}` : 'null'}`);
+    return status;
+  });
+
   ipcMain.handle('config-save', async (_event, data: Record<string, unknown>) => {
-    return configManager.writeConfig(data as unknown as ConfigV4);
+    return configManager.writeConfig(data as unknown as OBD2Config);
+  });
+
+  ipcMain.handle('settings-status-save', async (_event, settings: Record<string, unknown>, status: Record<string, unknown>) => {
+    return configManager.writeSettingsAndStatus(settings as unknown as OBD2Settings, status as unknown as OBD2Status);
   });
 
   // --- Theme IPC ---

@@ -59,11 +59,17 @@ const obd2API = {
     return () => { ipcRenderer.removeListener('usb-state-change', listener); };
   },
 
-  // Config (USB)
+  // Config (USB) — 3-file split: config / settings / status
   configLoad: (): Promise<Record<string, unknown> | null> =>
     ipcRenderer.invoke('config-load'),
+  settingsLoad: (): Promise<Record<string, unknown> | null> =>
+    ipcRenderer.invoke('settings-load'),
+  statusLoad: (): Promise<Record<string, unknown> | null> =>
+    ipcRenderer.invoke('status-load'),
   configSave: (data: Record<string, unknown>): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('config-save', data),
+  settingsStatusSave: (settings: Record<string, unknown>, status: Record<string, unknown>): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('settings-status-save', settings, status),
 
   // Themes
   themeList: (): Promise<Array<{ id: string; name: string; screenshotBase64?: string }>> =>
