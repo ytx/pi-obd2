@@ -84,15 +84,16 @@ function DashboardScreen() {
     // cancelled flag prevents duplicate connect from React StrictMode double-mount
     waitForHydration(useOBDStore).then(async () => {
       if (cancelled) return;
-      const { obdDevicePath } = useOBDStore.getState();
+      const { obdDevicePath, obdBaudRate } = useOBDStore.getState();
       window.obd2API.logSettings({
         obdDevicePath,
+        obdBaudRate,
         currentThemeId: useThemeStore.getState().currentThemeId,
       });
       const currentState = await window.obd2API.obdGetState();
       if (cancelled) return;
       if (currentState === 'disconnected' || currentState === 'error') {
-        window.obd2API.obdConnect(obdDevicePath ?? undefined).catch((e) =>
+        window.obd2API.obdConnect(obdDevicePath ?? undefined, obdBaudRate).catch((e) =>
           console.warn('Auto-connect failed:', e),
         );
       }

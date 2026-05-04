@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAppStore } from '@/stores/useAppStore';
-import { useOBDStore } from '@/stores/useOBDStore';
+import { useOBDStore, OBD_BAUD_RATES } from '@/stores/useOBDStore';
 import { OBDConnectionState, SerialDevice } from '@/types';
 
 function OBD2Screen() {
@@ -9,9 +9,11 @@ function OBD2Screen() {
     connectionState,
     isStubMode,
     obdDevicePath,
+    obdBaudRate,
     setConnectionState,
     setStubMode,
     setObdDevicePath,
+    setObdBaudRate,
   } = useOBDStore();
   const [devices, setDevices] = useState<SerialDevice[]>([]);
   const [message, setMessage] = useState<string | null>(null);
@@ -42,9 +44,9 @@ function OBD2Screen() {
   }, [setStubMode, setConnectionState]);
 
   const handleConnect = (devicePath: string) => {
-    setMessage(`Connecting to ${devicePath}...`);
+    setMessage(`Connecting to ${devicePath} @ ${obdBaudRate} baud...`);
     setObdDevicePath(devicePath);
-    window.obd2API.obdConnect(devicePath);
+    window.obd2API.obdConnect(devicePath, obdBaudRate);
   };
 
   const handleConnectStub = () => {
@@ -121,6 +123,24 @@ function OBD2Screen() {
             >
               Refresh
             </button>
+          </div>
+
+          <div className="flex items-center gap-3 mb-3">
+            <label className="text-sm text-obd-dim" htmlFor="obd-baud-rate">Baud rate:</label>
+            <select
+              id="obd-baud-rate"
+              value={obdBaudRate}
+              onChange={(e) => setObdBaudRate(Number(e.target.value))}
+              disabled={isConnected || isConnecting}
+              className="px-3 py-1 text-sm bg-obd-dark text-white border border-obd-dim rounded disabled:opacity-50"
+            >
+              {OBD_BAUD_RATES.map((r) => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
+            {(isConnected || isConnecting) && (
+              <span className="text-xs text-obd-dim">(disconnect to change)</span>
+            )}
           </div>
 
           <div className="space-y-2">

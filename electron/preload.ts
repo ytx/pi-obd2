@@ -17,7 +17,7 @@ const obd2API = {
   saveConfig: (): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('save-config'),
 
   // OBD2 connection
-  obdConnect: (devicePath?: string): Promise<void> => ipcRenderer.invoke('obd-connect', devicePath),
+  obdConnect: (devicePath?: string, baudRate?: number): Promise<void> => ipcRenderer.invoke('obd-connect', devicePath, baudRate),
   obdConnectStub: (): Promise<void> => ipcRenderer.invoke('obd-connect-stub'),
   obdDisconnect: (): Promise<void> => ipcRenderer.invoke('obd-disconnect'),
   obdGetState: (): Promise<string> => ipcRenderer.invoke('obd-get-state'),

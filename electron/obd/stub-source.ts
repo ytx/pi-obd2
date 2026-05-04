@@ -60,7 +60,7 @@ export class StubSource implements DataSource {
     };
   }
 
-  async connect(_devicePath?: string): Promise<void> {
+  async connect(_devicePath?: string, _baudRate?: number): Promise<void> {
     if (this.state === 'connected') return;
     this.setState('connecting');
     this.startTime = Date.now();

@@ -164,6 +164,7 @@ function getTpmsSource(): TpmsSource {
 // USB reset pin and device path — set by renderer via IPC at startup
 let lastUsbResetPin: number | null = null;
 let lastObdDevicePath: string | null = null;
+let lastObdBaudRate: number | undefined = undefined;
 
 async function handleUsbReset(): Promise<void> {
   if (lastUsbResetPin === null || lastObdDevicePath === null) return;
@@ -189,7 +190,7 @@ async function handleUsbReset(): Promise<void> {
   }
   usbResetInProgress = false;
   const ds = getDataSource();
-  ds.connect(lastObdDevicePath).catch((err) => {
+  ds.connect(lastObdDevicePath, lastObdBaudRate).catch((err) => {
     logger.error('obd', `USB reset reconnect failed: ${err}`);
   });
 }
@@ -278,9 +279,10 @@ function registerIpcHandlers(): void {
   });
 
   // --- OBD2 IPC ---
-  ipcMain.handle('obd-connect', async (_event, devicePath?: string) => {
-    logger.info('obd', `Connect requested (devicePath=${devicePath ?? 'none'}, stubMode=${isStubMode})`);
+  ipcMain.handle('obd-connect', async (_event, devicePath?: string, baudRate?: number) => {
+    logger.info('obd', `Connect requested (devicePath=${devicePath ?? 'none'}, baud=${baudRate ?? 'default'}, stubMode=${isStubMode})`);
     if (devicePath) lastObdDevicePath = devicePath;
+    lastObdBaudRate = baudRate;
     // Disconnect existing connection first
     if (dataSource && dataSource.getState() !== 'disconnected') {
       logger.info('obd', 'Disconnecting existing connection before reconnect');
@@ -298,7 +300,7 @@ function registerIpcHandlers(): void {
     }
     const ds = getDataSource();
     // Fire-and-forget: connection progress is reported via obd-connection-change events
-    ds.connect(devicePath ?? undefined).then(() => {
+    ds.connect(devicePath ?? undefined, baudRate).then(() => {
       logger.info('obd', `Connected (mode=${isStubMode ? 'stub' : 'elm327'})`);
     }).catch((err) => {
       logger.error('obd', `Connect failed: ${err}`);

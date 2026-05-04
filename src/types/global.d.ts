@@ -13,7 +13,7 @@ declare global {
       saveConfig: () => Promise<{ success: boolean; error?: string }>;
 
       // OBD2 connection
-      obdConnect: (devicePath?: string) => Promise<void>;
+      obdConnect: (devicePath?: string, baudRate?: number) => Promise<void>;
       obdConnectStub: () => Promise<void>;
       obdDisconnect: () => Promise<void>;
       obdGetState: () => Promise<string>;

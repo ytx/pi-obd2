@@ -56,6 +56,7 @@ export interface OBD2Settings {
   version: 1;
   screenPadding: number;
   obdDevicePath: string | null;
+  obdBaudRate?: number;
   gpsDevicePath: string | null;
   gpio: {
     illuminationPin: number | null;

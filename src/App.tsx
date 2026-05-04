@@ -96,6 +96,9 @@ function App() {
         if (s.obdDevicePath !== undefined) {
           useOBDStore.getState().setObdDevicePath(s.obdDevicePath as string | null);
         }
+        if (s.obdBaudRate !== undefined) {
+          useOBDStore.getState().setObdBaudRate(s.obdBaudRate as number);
+        }
         if (s.gpsDevicePath !== undefined) {
           useGpsStore.getState().setGpsDevicePath(s.gpsDevicePath as string | null);
         }

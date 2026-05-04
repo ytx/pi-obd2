@@ -6,7 +6,7 @@ export interface DtcEntry {
 }
 
 export interface DataSource {
-  connect(devicePath?: string): Promise<void>;
+  connect(devicePath?: string, baudRate?: number): Promise<void>;
   disconnect(): Promise<void>;
   getState(): OBDConnectionState;
   requestPids(pids: string[]): void;

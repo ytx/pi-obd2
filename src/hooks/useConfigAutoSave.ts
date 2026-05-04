@@ -56,6 +56,7 @@ export function useConfigAutoSave(): void {
         version: 1,
         screenPadding: board.screenPadding,
         obdDevicePath: obd.obdDevicePath,
+        obdBaudRate: obd.obdBaudRate,
         gpsDevicePath: gps.gpsDevicePath,
         gpio: {
           illuminationPin: gpio.illuminationPin,

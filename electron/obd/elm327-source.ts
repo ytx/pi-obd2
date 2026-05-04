@@ -8,14 +8,16 @@ import { getDtcDescription } from './dtc-codes';
 import { logger } from '../logger';
 
 const COMMAND_TIMEOUT = 10000;
+const PROTOCOL_SEARCH_TIMEOUT = 30000;
 const READ_CHUNK_SIZE = 1024;
-const BAUD_RATE = 38400;
+const DEFAULT_BAUD_RATE = 38400;
 const DEFAULT_DEVICE = '/dev/rfcomm0';
 
 export class ELM327Source implements DataSource {
   private state: OBDConnectionState = 'disconnected';
   private fd: number | null = null;
   private devicePath: string = DEFAULT_DEVICE;
+  private baudRate: number = DEFAULT_BAUD_RATE;
   private pollingPids: string[] = [];
   private dataCallbacks: ((values: OBDValue[]) => void)[] = [];
   private connectionCallbacks: ((state: OBDConnectionState) => void)[] = [];
@@ -25,12 +27,12 @@ export class ELM327Source implements DataSource {
   /** Incremented on each connect; stale operations check this to abort. */
   private generation = 0;
 
-  async connect(devicePath?: string): Promise<void> {
+  async connect(devicePath?: string, baudRate?: number): Promise<void> {
     if (this.state === 'connected' || this.state === 'connecting') {
       logger.info('ELM327', `connect() skipped (state=${this.state})`);
       return;
     }
-    logger.info('ELM327', `connect() called (state=${this.state}, devicePath=${devicePath ?? 'default'})`);
+    logger.info('ELM327', `connect() called (state=${this.state}, devicePath=${devicePath ?? 'default'}, baud=${baudRate ?? DEFAULT_BAUD_RATE})`);
 
     // Invalidate any stale operations from previous connect attempts
     const gen = ++this.generation;
@@ -40,6 +42,7 @@ export class ELM327Source implements DataSource {
 
     this.setState('connecting');
     this.devicePath = devicePath || DEFAULT_DEVICE;
+    this.baudRate = baudRate ?? DEFAULT_BAUD_RATE;
 
     try {
       // Open the serial device with O_NONBLOCK to prevent blocking the event loop
@@ -190,13 +193,13 @@ export class ELM327Source implements DataSource {
     try {
       // stty without -F operates on stdin; pass our O_NONBLOCK fd as stdin
       execFileSync('stty', [
-        String(BAUD_RATE), 'raw', '-echo', '-echoe', '-echok', '-echoctl', '-echoke',
+        String(this.baudRate), 'raw', '-echo', '-echoe', '-echok', '-echoctl', '-echoke',
         '-hupcl', 'clocal',
       ], {
         stdio: [this.fd, 'pipe', 'pipe'],
         timeout: 3000,
       });
-      logger.info('ELM327', `stty configured: ${this.devicePath} ${BAUD_RATE} baud, raw mode`);
+      logger.info('ELM327', `stty configured: ${this.devicePath} ${this.baudRate} baud, raw mode`);
     } catch (err) {
       logger.warn('ELM327', `stty failed (may still work): ${err}`);
     }
@@ -288,10 +291,11 @@ export class ELM327Source implements DataSource {
     const sp0 = await this.sendCommand('ATSP0', gen);
     logger.info('ELM327', `ATSP0 → ${this.sanitize(sp0)}`);
 
-    // 0100 triggers protocol search (may take several seconds)
+    // 0100 triggers protocol search — genuine ELM327 may stay in SEARCHING
+    // for 5-15s during first connect (vehicle ECU handshake). Use extended timeout.
     this.assertGen(gen);
-    logger.info('ELM327', 'Searching for vehicle protocol (0100)...');
-    const r0100 = await this.sendCommand('0100', gen);
+    logger.info('ELM327', `Searching for vehicle protocol (0100, timeout=${PROTOCOL_SEARCH_TIMEOUT}ms)...`);
+    const r0100 = await this.sendCommand('0100', gen, PROTOCOL_SEARCH_TIMEOUT);
     logger.info('ELM327', `0100 → ${this.sanitize(r0100)}`);
     if (r0100.toUpperCase().includes('UNABLE TO CONNECT')) {
       logger.warn('ELM327', 'Vehicle not responding (ignition off?)');
@@ -318,7 +322,7 @@ export class ELM327Source implements DataSource {
    * Send command and wait for '>' prompt.
    * Drains input buffer before writing (like pyserial's flushInput).
    */
-  private sendCommand(cmd: string, gen: number): Promise<string> {
+  private sendCommand(cmd: string, gen: number, timeoutMs: number = COMMAND_TIMEOUT): Promise<string> {
     return new Promise((resolve, reject) => {
       if (gen !== this.generation) {
         reject(new Error('Connection aborted (superseded)'));
@@ -344,7 +348,7 @@ export class ELM327Source implements DataSource {
 
       let response = '';
       const readBuf = Buffer.alloc(READ_CHUNK_SIZE);
-      const deadline = Date.now() + COMMAND_TIMEOUT;
+      const deadline = Date.now() + timeoutMs;
       let lastDataTime = 0;
 
       const readLoop = () => {
@@ -361,8 +365,15 @@ export class ELM327Source implements DataSource {
         }
 
         // If we have data but no '>' for 1 second, treat response as complete
-        // (some ELM327 clones hang without sending '>' after '?' error responses)
-        if (lastDataTime > 0 && Date.now() - lastDataTime > 1000) {
+        // (some ELM327 clones hang without sending '>' after '?' error responses).
+        // Skip this for 'SEARCHING...' — genuine ELM327 (e.g. OBDLink SX) goes
+        // silent for several seconds while searching for the vehicle protocol;
+        // wait the full command timeout for '>' or the actual response.
+        if (
+          lastDataTime > 0 &&
+          Date.now() - lastDataTime > 1000 &&
+          !response.includes('SEARCHING')
+        ) {
           logger.warn('ELM327', `No '>' prompt for ${cmd}, using partial response: ${this.sanitize(response)}`);
           resolve(response.trim());
           return;
