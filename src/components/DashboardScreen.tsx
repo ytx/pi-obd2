@@ -60,25 +60,35 @@ function DashboardScreen() {
     window.obd2API.themeList().then(setAvailableThemes);
 
     const removeData = window.obd2API.onOBDData(updateValues);
-    const removeConn = window.obd2API.onOBDConnectionChange((s) =>
-      setConnectionState(s as OBDConnectionState),
-    );
+    const removeConn = window.obd2API.onOBDConnectionChange((s) => {
+      setConnectionState(s as OBDConnectionState);
+      // isStubMode flips in main when connecting to a real device; refresh on connect
+      if (s === 'connected') {
+        window.obd2API.obdIsStubMode().then(setStubMode);
+      }
+    });
 
     // GPS listeners
     window.obd2API.gpsIsStubMode().then(setGpsStubMode);
     window.obd2API.gpsGetState().then((s) => setGpsConnectionState(s as OBDConnectionState));
     const removeGpsData = window.obd2API.onGPSData(updateValues);
-    const removeGpsConn = window.obd2API.onGPSConnectionChange((s) =>
-      setGpsConnectionState(s as OBDConnectionState),
-    );
+    const removeGpsConn = window.obd2API.onGPSConnectionChange((s) => {
+      setGpsConnectionState(s as OBDConnectionState);
+      if (s === 'connected') {
+        window.obd2API.gpsIsStubMode().then(setGpsStubMode);
+      }
+    });
 
     // TPMS listeners
     window.obd2API.tpmsIsStubMode().then(setTpmsStubMode);
     window.obd2API.tpmsGetState().then((s) => setTpmsConnectionState(s as OBDConnectionState));
     const removeTpmsData = window.obd2API.onTPMSData(updateValues);
-    const removeTpmsConn = window.obd2API.onTPMSConnectionChange((s) =>
-      setTpmsConnectionState(s as OBDConnectionState),
-    );
+    const removeTpmsConn = window.obd2API.onTPMSConnectionChange((s) => {
+      setTpmsConnectionState(s as OBDConnectionState);
+      if (s === 'connected') {
+        window.obd2API.tpmsIsStubMode().then(setTpmsStubMode);
+      }
+    });
 
     // Wait for OBDStore hydration then auto-connect (only if disconnected)
     // cancelled flag prevents duplicate connect from React StrictMode double-mount
